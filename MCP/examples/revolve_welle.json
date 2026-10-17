@@ -1,0 +1,14 @@
+{
+  "name": "Welle (simplified)",
+  "description": "Demo of a revolve body along X (shaft lying in the top view) with a cross hole from the top and an axial centre hole from the left face.",
+  "body": {"type": "revolve", "axis": "x",
+           "points": [[0, 0], {"x": 0, "y": 14, "c": 1}, [40, 14], {"x": 40, "y": 17.5, "r": 2}, [140, 17.5],
+                      [140, 22.5], [160, 22.5], [160, 20], {"x": 300, "y": 20, "c": 1}, [300, 0]],
+           "source": {"view": "front", "dims": ["Ø28", "Ø35", "Ø45", "Ø40", "300", "1x45°", "R2"]}},
+  "features": [
+    {"type": "hole", "id": "H1", "positions": [[60, 22.5]], "diameter": 6, "depth": "through",
+     "review": "Cross hole added for the demo, not on the drawing"},
+    {"type": "side_hole", "id": "H2", "face": "left", "positions": [[22.5, 22.5]], "thread": "M8", "depth": 20,
+     "review": "Axial thread added for the demo, not on the drawing"}
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "name": "Rail plate - side and angled holes",
+  "description": "Demo of side_hole (counterbored holes drilled from the back edge into the rail, tapped hole from the front edge, through hole along X) and axis_hole (inclined drilling).",
+  "body": {"type": "box", "length": 140, "width": 118, "thickness": 9},
+  "features": [
+    {"type": "pad", "id": "P1", "shape": "rect", "center": [70, 108], "size": [140, 20], "z0": 9, "height": 6,
+     "source": {"view": "side", "dims": ["15", "20"]}},
+    {"type": "side_hole", "id": "S1", "face": "back", "positions": [[30, 7.5], [110, 7.5]], "diameter": 6.6,
+     "depth": 25, "cbore_diameter": 11, "cbore_depth": 6.5, "source": {"view": "back", "text": "2x Ø6.6 / Ø11 x 6.5"}},
+    {"type": "side_hole", "id": "S2", "face": "front", "positions": [[70, 4.5]], "thread": "M5", "depth": 12},
+    {"type": "side_hole", "id": "S3", "face": "left", "positions": [[50, 4.5]], "diameter": 4, "depth": "through"},
+    {"type": "axis_hole", "id": "A1", "entry": [70, 60, 9], "direction": [0.5, 0, -0.866], "diameter": 5, "depth": "through",
+     "source": {"view": "section B-B", "text": "Ø5, 30° to vertical"}},
+    {"type": "chamfer", "id": "C1", "edges": "holes", "targets": ["S3"], "side": "both", "size": 0.5}
+  ]
+}

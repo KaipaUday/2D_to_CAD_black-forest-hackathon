@@ -1,0 +1,27 @@
+{
+  "name": "Lagerschaft",
+  "description": "Clean rebuild of Lagerschaft with circles_hull + pads (replaces the 364-point polygon + pocket trick in test_plate.json).",
+  "title_block": {"part_name": "Lagerschaft", "company": "CAx GmbH", "scale_stated": "1:1",
+                  "general_notes": ["Draft Angle 2°", "R2"]},
+  "body": {"type": "circles_hull", "thickness": 10,
+           "circles": [{"center": [15, 45], "diameter": 30}, {"center": [90, 45], "diameter": 90},
+                       {"center": [165, 45], "diameter": 30}],
+           "source": {"view": "top", "dims": ["Ø30", "Ø90", "150"]},
+           "derivation": "Ear centres 150 apart, symmetric to the Ø90 tube; plate 10 from section A-A"},
+  "features": [
+    {"type": "pad", "id": "P1", "shape": "circle", "center": [90, 45], "diameter": 90,
+     "z0": 10, "height": 20, "taper_deg": 2, "bore_diameter": 70, "bore_depth": "through",
+     "source": {"view": "A-A", "dims": ["Ø90", "Ø70", "30"]}},
+    {"type": "pad", "id": "P2", "shape": "circle", "center": [15, 45], "diameter": 30,
+     "z0": 10, "height": 10, "taper_deg": 2, "bore_diameter": 20, "bore_depth": "through"},
+    {"type": "pad", "id": "P3", "shape": "circle", "center": [165, 45], "diameter": 30,
+     "z0": 10, "height": 10, "taper_deg": 2, "bore_diameter": 20, "bore_depth": "through",
+     "source": {"view": "A-A", "dims": ["Ø30", "Ø20", "20"]}},
+    {"type": "fillet", "id": "R1", "edges": "pad_root", "targets": ["P1", "P2", "P3"], "radius": 2,
+     "source": {"text": "R2"}}
+  ],
+  "assumptions": [
+    {"item": "Left ear Ø30 / Ø20", "value": "same as right ear", "reason": "Only the right ear is dimensioned; the part is drawn symmetric"},
+    {"item": "Draft 2°", "value": 2, "reason": "Applied to the pad walls only (tube and ears); plate edge kept vertical"}
+  ]
+}

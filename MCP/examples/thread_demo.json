@@ -1,0 +1,16 @@
+{
+  "name": "Thread demo",
+  "description": "Internal threads as tap-drill holes (Ø from the ISO table), external thread on a pad stud. All threads are cosmetic and go to the review JSON.",
+  "body": {"type": "box", "length": 80, "width": 40, "thickness": 15},
+  "features": [
+    {"type": "hole", "id": "T1", "positions": [[15, 20]], "thread": "M8", "depth": "through",
+     "source": {"text": "M8"}},
+    {"type": "hole", "id": "T2", "positions": [[35, 20]], "thread": {"designation": "M6", "depth": 10, "tolerance": "6H"},
+     "depth": 13, "source": {"text": "M6-6H x 10 / 13"}},
+    {"type": "hole", "id": "T3", "positions": [[55, 20]], "thread": "M10x1", "depth": "through",
+     "source": {"text": "M10x1"}},
+    {"type": "pad", "id": "S1", "shape": "circle", "center": [70, 20], "diameter": 10, "z0": 15, "height": 20,
+     "thread": {"designation": "M10", "depth": 16, "tolerance": "6g"}, "source": {"text": "M10 x 16"}},
+    {"type": "chamfer", "id": "C1", "edges": "pad_top", "targets": ["S1"], "size": 1}
+  ]
+}

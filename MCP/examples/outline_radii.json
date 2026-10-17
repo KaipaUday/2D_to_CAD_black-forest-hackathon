@@ -1,0 +1,21 @@
+{
+  "name": "Angle plate - per-vertex corner radii",
+  "description": "Demo of polygon vertices with r (convex and concave) and c (corner chamfer). Exact arcs, no point clouds.",
+  "body": {"type": "polygon", "thickness": 10,
+           "points": [
+             {"x": 0, "y": 0, "r": 6},
+             {"x": 100, "y": 0, "r": 6},
+             {"x": 100, "y": 30, "c": 5},
+             {"x": 35, "y": 30, "r": 10},
+             {"x": 35, "y": 80, "r": 17.5},
+             {"x": 0, "y": 80, "r": 6}
+           ],
+           "source": {"view": "top", "text": "R6 corners, R10 inner corner, 5x45°"}},
+  "features": [
+    {"type": "hole", "id": "H1", "positions": [[17.5, 62.5]], "diameter": 15, "depth": "through"},
+    {"type": "slot", "id": "S1", "start": [55, 15], "end": [85, 15], "width": 8, "depth": "through"}
+  ],
+  "assumptions": [
+    {"item": "R17.5 top corner", "value": 17.5, "reason": "Drawn as a full round end on the 35 wide arm; radius = half the arm width"}
+  ]
+}

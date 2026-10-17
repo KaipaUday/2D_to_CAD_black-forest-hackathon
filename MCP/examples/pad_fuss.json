@@ -1,0 +1,20 @@
+{
+  "name": "Fuss",
+  "description": "Demo of a pad (generalised standing boss) with a through bore and a root fillet.",
+  "body": {"type": "box", "length": 115, "width": 115, "thickness": 19, "corner_radius": 22,
+           "source": {"view": "top", "dims": ["115", "R22", "19"]}},
+  "features": [
+    {"type": "pad", "id": "P1", "shape": "circle", "center": [57.5, 57.5], "diameter": 57, "z0": 19,
+     "height": 57.2, "bore_diameter": 33, "bore_depth": "through",
+     "source": {"view": "front", "dims": ["Ø57", "Ø33", "76.2"]}, "derivation": "height = 76.2 - 19"},
+    {"type": "hole", "id": "H1", "positions": [[22, 22], [93, 22], [93, 93], [22, 93]], "diameter": 19,
+     "depth": "through", "confidence": 0.7, "source": {"view": "top", "text": "4x Ø19"}},
+    {"type": "fillet", "id": "R1", "edges": "pad_root", "targets": ["P1"], "radius": 9.5,
+     "source": {"text": "R9.5"}},
+    {"type": "chamfer", "id": "C1", "edges": "pad_top", "targets": ["P1"], "size": 1,
+     "review": "Edge break on the boss top assumed (not dimensioned)"}
+  ],
+  "assumptions": [
+    {"item": "H1 positions", "value": "concentric with the R22 corners (22 from each edge)", "reason": "Hole positions not dimensioned; drawn concentric with the corner radii"}
+  ]
+}

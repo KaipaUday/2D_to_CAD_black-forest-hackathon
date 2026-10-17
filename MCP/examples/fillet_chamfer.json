@@ -1,0 +1,19 @@
+{
+  "name": "Lever plate - fillets and chamfers",
+  "description": "Demo of fillet/chamfer: hole chamfers 1x45 on both sides (exact cones), R1 on the top outline, 0.5x45 on the bottom outline.",
+  "body": {"type": "polygon", "thickness": 8,
+           "points": [[0, 0, 10], [120, 0, 8], [120, 24, 8], [40, 24, 10], [0, 29, 10]],
+           "source": {"view": "top", "text": "R10, R8, 8 thick"}},
+  "features": [
+    {"type": "hole", "id": "H1", "positions": [[14.5, 14.5]], "diameter": 22, "depth": "through",
+     "source": {"view": "top", "text": "Ø22"}},
+    {"type": "hole", "id": "H2", "positions": [[60, 12], [108, 12]], "diameter": 10, "depth": "through",
+     "source": {"view": "top", "text": "2x Ø10"}},
+    {"type": "chamfer", "id": "C1", "edges": "holes", "targets": ["H1", "H2"], "side": "both", "size": 1,
+     "source": {"view": "section", "text": "1x45° both sides"}},
+    {"type": "fillet", "id": "R1", "edges": "top_outline", "radius": 1,
+     "review": "General note 'unbemaßte Radien R1'; applied to the top outline only"},
+    {"type": "chamfer", "id": "C2", "edges": "bottom_outline", "size": 0.5,
+     "source": {"text": "Kanten 0.5x45°"}}
+  ]
+}
