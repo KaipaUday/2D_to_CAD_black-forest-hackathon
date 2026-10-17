@@ -35,6 +35,8 @@ No AI inside the server: the AI reads the drawing and writes the JSON, the serve
 - `outline.py`     exact 2D outlines: per-vertex radius/chamfer, circle hulls (lines + arcs)
 - `threads.py`     ISO metric thread table (nominal, coarse pitch, tap drill)
 - `builder.py`     Part -> CadQuery solid (plain functions, testable without MCP)
+- `normalize.py`   forgiving input: fixes AI format slips ('THRU', {"x","y"} points, confidence words, note fields,
+                   type aliases, part sent as a JSON string) and lists them as `format_fixes`; readable schema errors
 - `validation.py`  schema, plausibility, warnings, defaulted fields, review list, model probes, STEP re-import
 - `pdf2dxf.py`     PDF page -> clean entities (circles, arcs, hidden/centre/dimension lines, texts) -> DXF
 - `drawing.py`     entities -> drawing JSON (frame, title block, views, dimensions, scale) + page PNG

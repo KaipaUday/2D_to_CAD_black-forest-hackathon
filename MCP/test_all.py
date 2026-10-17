@@ -2,6 +2,7 @@
 1. every examples/*.json must build and pass the model check (run_json.run)
 2. every bad JSON below must be REJECTED with the expected message."""
 import glob
+import json
 import sys
 
 import run_json
@@ -19,7 +20,7 @@ BAD = [
                                         "points": [[0, 0, 30], [40, 0, 30], [40, 40], [0, 40]]}), "too short"),
     ("r and c on one vertex", part([], {"type": "polygon", "thickness": 5,
                                         "points": [{"x": 0, "y": 0, "r": 2, "c": 1}, [40, 0], [40, 40]]}), "not both"),
-    ("unknown field", part([{"type": "hole", "id": "H", "positions": [[5, 5]], "diamter": 3}]), "Extra inputs"),
+    ("unknown field", part([{"type": "hole", "id": "H", "positions": [[5, 5]], "diamter": 3}]), "did you mean 'diameter'"),
     ("negative diameter", part([{"type": "hole", "id": "H", "positions": [[5, 5]], "diameter": -3}]), "greater than 0"),
     ("hole without diameter", part([{"type": "hole", "id": "H", "positions": [[5, 5]]}]), "diameter (or thread)"),
     ("unknown thread", part([{"type": "hole", "id": "H", "positions": [[5, 5]], "thread": "M7"}]), "not in the ISO"),
@@ -27,7 +28,7 @@ BAD = [
     ("thread deeper than hole", part([{"type": "hole", "id": "H", "positions": [[5, 5]], "depth": 5,
                                        "thread": {"designation": "M5", "depth": 8}}]), "thread depth"),
     ("blind hole too deep", part([{"type": "hole", "id": "H", "positions": [[50, 30]], "diameter": 5, "depth": 30}]), "below the part"),
-    ("hole outside", part([{"type": "hole", "id": "H", "positions": [[99, 30]], "diameter": 5, "depth": "through"}]), "outside the part"),
+    ("hole outside", part([{"type": "hole", "id": "H", "positions": [[99, 30]], "diameter": 5, "depth": "through"}]), "extends past the outline"),
     ("pad bore too big", part([{"type": "pad", "id": "P", "shape": "circle", "center": [50, 30], "diameter": 20,
                                 "bore_diameter": 25, "bore_depth": "through", "z0": 10, "height": 5}]), "smaller than the pad"),
     ("floating pad", part([{"type": "pad", "id": "P", "shape": "circle", "center": [50, 30], "diameter": 20,
@@ -55,6 +56,41 @@ BAD = [
     ("cavity on revolve", part([{"type": "cavity", "id": "C", "wall_thickness": 1, "depth": 2}],
                                {"type": "revolve", "axis": "z", "points": [[0, 0], [0, 5], [10, 5], [10, 0]]}), "cavity needs"),
 ]
+
+
+def ai_slip_checks() -> bool:
+    """Typical first attempts written by an AI must be accepted (format fixed and
+    reported), and a scale mix-up must get one clear hint."""
+    ok = True
+    fuss = {"name": "Fuss", "body": {"type": "plate", "length": "115mm", "width": 115, "height": 19,
+                                     "corner_radius": 22, "source": "top view", "confidence": "high"},
+            "features": [{"type": "pad", "id": "P1", "shape": "circle", "center": {"x": 57.5, "y": 57.5},
+                          "diameter": "Ø57", "height": 57.2, "bore_diameter": 33, "bore_depth": "THRU",
+                          "notes": "standing boss"},
+                         {"type": "through_hole", "positions": [{"x": 22, "y": 22}, {"x": 93, "y": 22},
+                                                                {"x": 22, "y": 93}, {"x": 93, "y": 93}],
+                          "diameter": 19, "depth": "thru", "count": 4},
+                         {"type": "hole", "id": "H2", "center": [57.5, 57.5], "diameter": 5, "depth": 3},
+                         {"type": "fillet", "id": "F1", "edges": "pad_root", "targets": "P1", "radius": 9.5}],
+            "assumptions": ["hole positions concentric with R22",
+                            {"item": "bore", "value": "through", "why": "hidden lines", "confidence": 0.6}],
+            "material": "S235"}
+    fixes: list = []
+    p, errs = V.parse(json.dumps({"part": fuss}), fixes)
+    if p is not None:
+        errs = V.plausibility(p)
+    hit = p is not None and not errs and len(fixes) >= 10 and [c["item"] for c in V.confirm_list(p)][-1] == "bore"
+    ok &= hit
+    print(f"{'OK  ' if hit else 'FAIL'} AI format slips accepted with {len(fixes)} fixes: {errs[:2]}")
+    gp = json.load(open("examples/grundplatte.json"))
+    gp["body"]["points"] = [[x / 2, y / 2] for x, y in gp["body"]["points"]]  # body in sheet mm (1:2)
+    p, errs = V.parse(gp)
+    errs = V.plausibility(p) if p is not None else errs
+    hint = V.scale_hint(p, errs) or ""
+    hit = bool(errs) and "different scales" in hint
+    ok &= hit
+    print(f"{'OK  ' if hit else 'FAIL'} scale mix-up gets a hint: {hint[:80]}")
+    return ok
 
 
 def drawing_checks() -> bool:
@@ -122,6 +158,7 @@ def main() -> int:
     hit = got == ["b", "c", "H"]
     ok &= hit
     print(f"{'OK  ' if hit else 'FAIL'} confirm list: {got}")
+    ok &= ai_slip_checks()
     ok &= drawing_checks()
     print("ALL OK" if ok else "SOME FAILED")
     return 0 if ok else 1

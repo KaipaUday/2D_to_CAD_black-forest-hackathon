@@ -501,6 +501,7 @@ class Part(BaseModel):
     coordinate_system: Optional[dict[str, Any]] = None
     modeling_plan: Optional[list[str]] = None
     verification: Optional[Any] = None
+    notes: Optional[dict[str, Any]] = Field(None, description="Anything else worth keeping (not used for geometry)")
 
     @model_validator(mode="after")
     def _name(self):

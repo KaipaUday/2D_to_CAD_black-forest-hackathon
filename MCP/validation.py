@@ -7,6 +7,7 @@ import cadquery as cq
 from pydantic import BaseModel, ValidationError
 from shapely.geometry import LineString, Point as SPoint, box as sbox
 
+import normalize as N
 import outline as O
 from builder import (body_polygon, disc_height, footprint_bounds, hole_instances,
                      hull_circles, inner_wall_coordinate, pad_points, pad_polygon,
@@ -20,13 +21,97 @@ TOL = 0.05  # mm
 META = {"source", "confidence", "review", "derivation", "description", "id", "type"}
 
 
-def parse(part_json: dict) -> tuple[Part | None, list[dict]]:
-    """Schema check. Returns (part, errors)."""
+def parse(part_json, fixes: list | None = None) -> tuple[Part | None, list[dict]]:
+    """Schema check. Format slips (see normalize.py) are fixed first and listed
+    in `fixes`; real problems come back as one readable error each."""
+    data, fx, errors = N.normalize(part_json)
+    if fixes is not None:
+        fixes.extend(fx)
+    if data is None:
+        return None, errors
     try:
-        return Part.model_validate(part_json), []
+        part = Part.model_validate(data)
     except ValidationError as e:
-        return None, [{"check": "schema", "where": ".".join(map(str, err["loc"])),
-                       "problem": err["msg"]} for err in e.errors()]
+        return None, errors + N.friendly(e.errors(), data)
+    if errors:
+        return None, errors
+    soften_defaults(part, fixes)
+    return part, []
+
+
+COORD_HINT = ("Coordinates are part mm from the lower-left corner of the outline bbox in the top view; "
+              "load_drawing view geometry is local to the view and must be multiplied by the scale "
+              "(call load_drawing with scale=<part mm per sheet mm>).")
+
+
+def _fmt_bounds(b) -> str:
+    return f"x {b[0]:.4g}..{b[2]:.4g}, y {b[1]:.4g}..{b[3]:.4g}"
+
+
+def scale_hint(part: Part | None, errors: list[dict]) -> str | None:
+    """One sentence when the errors look like a units/scale/origin mix-up."""
+    if part is None or not isinstance(part.body, PRISMATIC):
+        return None
+    if not any(e["check"] in ("inside_part", "inside_cavity", "tab") for e in errors):
+        return None
+    x0, y0, x1, y1 = body_polygon(part.body).bounds
+    xs, ys = [], []
+    for f in part.features:
+        for shp in (_footprint(f, part) or []):
+            b = shp.bounds
+            xs += [b[0], b[2]]
+            ys += [b[1], b[3]]
+    if not xs:
+        return None
+    fx, fy = max(xs), max(ys)
+    if min(xs) < x0 - 1 or min(ys) < y0 - 1:
+        return ("Some features have negative or too small coordinates: the origin must be the lower-left corner "
+                "of the outline bbox in the top view (z=0 underside).")
+    ratio = max(fx / (x1 or 1), fy / (y1 or 1))
+    if ratio > 1.3:
+        return (f"Features reach x {fx:.4g}, y {fy:.4g} but the outline only spans {x1:.4g} x {y1:.4g} "
+                f"(about {ratio:.2g}x). The body and the features probably use different scales: use the drawing's "
+                "dimension values (part mm) for both, not sheet-mm geometry from load_drawing.")
+    return None
+
+
+def soften_defaults(part: Part, fixes: list | None = None) -> None:
+    """A general-note radius (body.corner_radius) that does not fit a short edge
+    is reduced on that vertex instead of rejecting the outline; listed in fixes
+    and on the review list."""
+    b = part.body
+    if not isinstance(b, PolygonBody) or not b.corner_radius:
+        return
+    pts = b.points
+    n = len(pts)
+    changed = []
+    for i, p in enumerate(pts):
+        if p.r or p.c:
+            continue
+        a, c = pts[i - 1], pts[(i + 1) % n]
+        la = math.hypot(p.x - a.x, p.y - a.y)
+        lc = math.hypot(p.x - c.x, p.y - c.y)
+        # half of each adjacent edge (the neighbour may round too); keep it simple
+        lim = 0.5 * min(la, lc)
+        ang = math.radians(_turn(a, p, c))
+        rmax = lim * math.tan(ang / 2) if 0 < ang < math.pi else lim
+        if b.corner_radius > rmax + 1e-9:
+            r = round(max(rmax * 0.999, 0), 3)
+            p.r = r if r > 0 else None
+            changed.append(f"({p.x:g}, {p.y:g}) R{b.corner_radius:g} -> R{r:g}")
+    if changed:
+        msg = "general corner_radius does not fit short edges, reduced at " + ", ".join(changed)
+        b.review = ((b.review + "; ") if b.review else "") + msg
+        if fixes is not None:
+            fixes.append("body: " + msg)
+
+
+def _turn(a, p, c) -> float:
+    """Interior-independent angle between the two edges at p (degrees, 0..180)."""
+    v1 = (a.x - p.x, a.y - p.y)
+    v2 = (c.x - p.x, c.y - p.y)
+    cosv = (v1[0] * v2[0] + v1[1] * v2[1]) / ((math.hypot(*v1) * math.hypot(*v2)) or 1)
+    return math.degrees(math.acos(max(-1, min(1, cosv))))
 
 
 def _cavity(part: Part) -> Cavity | None:
@@ -133,13 +218,17 @@ def plausibility(part: Part) -> list[dict]:
             if f.top_z is not None and not (t - cav.depth < f.top_z <= t + TOL):
                 err("island", f.id, f"top_z {f.top_z} must be between cavity floor {t - cav.depth} and top {t}")
             if inner is not None and isinstance(f, (Boss, Rib)):
-                if not inner.buffer(TOL).contains(_footprint(f, part)[0]):
-                    err("inside_cavity", f.id, "Feature is not fully inside the cavity")
+                if _footprint(f, part)[0].intersection(inner).area < 1e-3:
+                    err("inside_cavity", f.id, f"{f.type} at {f.center} is not inside the cavity at all "
+                                               f"(cavity spans {_fmt_bounds(inner.bounds)}); check coordinates")
             if inner is not None and isinstance(f, Tab):
                 try:
                     inner_wall_coordinate(part, cav, f)
                 except ValueError:
-                    err("tab", f.id, "Tab position does not hit the cavity wall")
+                    pos = f.center_x if f.wall in ("top", "bottom") else f.center_y
+                    axis = "x" if f.wall in ("top", "bottom") else "y"
+                    err("tab", f.id, f"Tab at {axis}={pos} does not hit the {f.wall} cavity wall "
+                                     f"(cavity spans {_fmt_bounds(inner.bounds)}). " + COORD_HINT)
                 span = inner.bounds[2] - inner.bounds[0] if f.wall in ("left", "right") \
                     else inner.bounds[3] - inner.bounds[1]
                 if f.length_from_inner_wall >= span:
@@ -221,8 +310,14 @@ def plausibility(part: Part) -> list[dict]:
             allowed = outline.union(*[pad_polygon(p) for p in part.features if isinstance(p, Pad)]) \
                 if any(isinstance(p, Pad) for p in part.features) else outline
             for shp in _footprint(f, part):
-                if not allowed.buffer(TOL).contains(shp):
-                    err("inside_part", f.id, "Feature extends outside the part outline")
+                if allowed.buffer(TOL).contains(shp):
+                    continue
+                if shp.intersection(allowed).area < 1e-3:
+                    err("inside_part", f.id, f"Feature at {_fmt_bounds(shp.bounds)} is completely outside the part "
+                                             f"(outline {_fmt_bounds(outline.bounds)}). " + COORD_HINT)
+                elif not isinstance(f, (Slot, Pocket)):  # open slots / notches are fine
+                    err("inside_part", f.id, f"Feature at {_fmt_bounds(shp.bounds)} extends past the outline "
+                                             f"{_fmt_bounds(outline.bounds)}. " + COORD_HINT)
 
         # fillets / chamfers
         if isinstance(f, (Fillet, Chamfer)):
@@ -308,6 +403,15 @@ def warnings(part: Part) -> list[dict]:
                 out.append({"check": "thread", "where": f.id,
                             "problem": f"Ø{f.diameter} differs from the ISO tap drill Ø{info['tap_drill']} "
                                        f"for {info['designation']}"})
+        if isinstance(f, (Slot, Pocket)) and isinstance(part.body, PRISMATIC) and \
+                not body_polygon(part.body).buffer(TOL).contains(_footprint(f, part)[0]):
+            out.append({"check": "open_cut", "where": f.id,
+                        "problem": "Cut runs out of the outline (open slot / notch / step); check that this is intended"})
+        if isinstance(f, (Boss, Rib)) and _cavity(part) and isinstance(part.body, PRISMATIC):
+            inner = body_polygon(part.body).buffer(-_cavity(part).wall_thickness, join_style=2)
+            if not inner.is_empty and not inner.buffer(TOL).contains(_footprint(f, part)[0]):
+                out.append({"check": "island_joins_wall", "where": f.id,
+                            "problem": f"{f.type} reaches into the cavity wall (joined to the wall); check that this is intended"})
         if isinstance(f, Pad) and isinstance(part.body, PRISMATIC) and \
                 not body_polygon(part.body).buffer(TOL).contains(pad_polygon(f)):
             out.append({"check": "pad_overhang", "where": f.id,

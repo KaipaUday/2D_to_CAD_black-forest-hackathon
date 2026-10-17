@@ -124,21 +124,41 @@ def get_part_schema() -> dict:
             "json_schema": schema.Part.model_json_schema()}
 
 
+def _check(part) -> tuple:
+    """parse + plausibility. Returns (parsed or None, response dict)."""
+    fixes: list = []
+    parsed, errors = V.parse(part, fixes)
+    stage = "schema"
+    if parsed is not None:
+        errors = V.plausibility(parsed)
+        stage = "plausibility"
+    res = {"ok": not errors}
+    if errors:
+        res.update(stage=stage, error_count=len(errors), errors=errors[:25],
+                   how_to_fix="Fix ALL listed errors in one go, then call again. Errors name the feature id and field.")
+        hint = V.scale_hint(parsed, errors)
+        if hint:
+            res["hint"] = hint
+    if fixes:
+        res["format_fixes"] = fixes  # accepted, but write it this way next time
+    return (parsed if not errors else None), res
+
+
 @mcp.tool()
-def validate_part_json(part: dict) -> dict:
+def validate_part_json(part: dict | str) -> dict:
     """Check a part JSON BEFORE building: schema (unknown keys, missing values),
     plausibility (features inside the outline, depths, counterbore/countersink sizes,
-    threads, fillets...) and the review list. Fix every error and call again until ok."""
-    parsed, errors = V.parse(part)
-    if parsed is None:
-        return {"ok": False, "errors": errors}
-    errors = V.plausibility(parsed)
-    return {"ok": not errors, "errors": errors, "review_list": V.review_list(parsed),
-            "confirm": V.confirm_list(parsed)}
+    threads, fillets...) and the review list. Small format slips ('THRU', {"x","y"}
+    points, confidence words, note fields) are fixed and listed in format_fixes.
+    Fix every listed error in one go and call again until ok."""
+    parsed, res = _check(part)
+    if parsed is not None:
+        res.update(review_list=V.review_list(parsed), confirm=V.confirm_list(parsed))
+    return res
 
 
 @mcp.tool()
-def build_from_json(part: dict) -> list:
+def build_from_json(part: dict | str) -> list:
     """Validate the part JSON, build the 3D model and check it against the spec
     (valid solid, overall size, every hole probed for diameter and depth, fillets).
 
@@ -153,12 +173,9 @@ def build_from_json(part: dict) -> list:
     - a PNG preview (isometric, top, front): compare it with the drawing views.
     Call export_step afterwards if ok is true."""
     notify("build_from_json called")
-    parsed, errors = V.parse(part)
+    parsed, res = _check(part)
     if parsed is None:
-        return [_text({"ok": False, "stage": "schema", "errors": errors})]
-    errors = V.plausibility(parsed)
-    if errors:
-        return [_text({"ok": False, "stage": "plausibility", "errors": errors})]
+        return [_text(res)]
     notes: list = []
     try:
         model = builder.build(parsed, notes)
@@ -169,6 +186,11 @@ def build_from_json(part: dict) -> list:
     confirm = V.confirm_list(parsed)
     state.update(part=parsed, model=model, notes=notes, check=result, confirm=confirm, confirmed={})
     result["stage"] = "model_check"
+    if res.get("format_fixes"):
+        result["format_fixes"] = res["format_fixes"]
+    if not result["ok"]:
+        result["how_to_fix"] = ("The model was built but a check failed: see checks/holes. Usually a depth, "
+                                "position or z-height in the JSON does not match the geometry; fix and rebuild.")
     result["confirm"] = confirm
     result["status"] = "draft" if confirm else "final"
     result["review_list"] = V.review_list(parsed, notes)
