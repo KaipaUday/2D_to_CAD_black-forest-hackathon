@@ -1,6 +1,6 @@
 """Test a part JSON without MCP: python run_json.py examples/x.json [more.json ...]
-Prints the review list and model check, writes <name>.step and <name>_review.json
-to examples/out/ (or $OUTPUT_DIR). Exit code 1 if any file fails."""
+Prints the review list and model check, writes <name>.step, <name>_review.json
+and the model view DXFs (<name>_views.dxf, _front/_top/_left/_iso.dxf) to examples/out/ (or $OUTPUT_DIR). Exit code 1 if any file fails."""
 import json
 import os
 import sys
@@ -9,6 +9,7 @@ import cadquery as cq
 
 import builder
 import validation as V
+import views_dxf
 
 
 def run(path: str, quiet: bool = False) -> bool:
@@ -33,14 +34,16 @@ def run(path: str, quiet: bool = False) -> bool:
     out = stem + ".step"
     cq.exporters.export(model, out)
     step = V.check_step(out)
+    dxf = views_dxf.export(model, out_dir, os.path.basename(stem))
+    dxf_ok = all(os.path.getsize(p) > 0 for p in dxf.values())
     with open(stem + "_review.json", "w", encoding="utf-8") as fh:
         json.dump({"part": part.name, "step_file": os.path.basename(out), "validated": check["ok"],
-                   "model_check": check, "step_check": step, "review_list": review},
+                   "model_check": check, "step_check": step, "review_list": review, "dxf_files": dxf},
                   fh, indent=2, ensure_ascii=False)
-    ok = check["ok"] and step["reimport_ok"]
+    ok = check["ok"] and step["reimport_ok"] and dxf_ok
     print(f"{'OK  ' if ok else 'FAIL'} {path}: volume {check['volume']}, size {check['size_xyz']}, "
           f"failed checks {[k for k, v in check['checks'].items() if not v]}, "
-          f"review items {len(review)}, STEP {step}")
+          f"review items {len(review)}, STEP {step}, DXF views {'ok' if dxf_ok else 'EMPTY'}")
     return ok
 
 

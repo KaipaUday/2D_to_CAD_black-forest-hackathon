@@ -21,7 +21,23 @@ No AI inside the server: the AI reads the drawing and writes the JSON, the serve
    features), `status` draft/final and a PNG preview (isometric, top, front).
 5. `confirm_items(ids)` records the user's yes; a different value means: edit the JSON and rebuild.
 6. `export_step(name)` writes `<name>.step` (or `<name>_draft.step` while confirm items are open),
-   `<name>_review.json` and `<name>_preview.png`.
+   `<name>_review.json`, `<name>_preview.png` and the model view DXFs.
+
+### DXF in every response
+Every tool response has `"dxf": {"drawing": <path>, "model": {...}}`:
+- `drawing`: the DXF of the last `load_drawing` (sheet mm, layers VISIBLE / HIDDEN / CENTER / DIMENSION ...).
+- `model`: after `build_from_json` (`<part name>_*.dxf`) and again after `export_step` (`<step name>_*.dxf`):
+  `views` (front, top below it, left view to its right, iso top right, ISO first angle) plus one file per view
+  (`front`, `top`, `left`, `iso`). Part mm 1:1, hidden-line removal, layers VISIBLE and HIDDEN (dashed), `views_dxf.py`.
+  A failed DXF export is reported as `dxf_error`, it never fails the build.
+
+### Request log
+Every tool call is appended to `OUTPUT_DIR/mcp_log.jsonl`, one JSON per line:
+`ts` (local time, ms), `seq`, `pid`, `tool`, `request` (arguments; a part JSON sent as a string is stored as JSON),
+`files_in` (files named in the request), `files_out` (files written by this call), `summary`
+(ok / status / stage / errors), `response` (without images; responses over 50k chars are not stored) and `duration_ms`.
+`tail -f output/mcp_log.jsonl` to watch live, or `pandas.read_json(path, lines=True)`.
+`DRAWING2CAD_LOG=<path>` moves it, `DRAWING2CAD_LOG=0` switches it off.
 
 ### pdf2dxf.py (also a CLI: `python pdf2dxf.py in.pdf out.dxf` or folders)
 - closed ring of cubic Beziers with a square bbox -> CIRCLE; every Bezier that fits a circle -> ARC;
@@ -41,11 +57,16 @@ No AI inside the server: the AI reads the drawing and writes the JSON, the serve
 - `pdf2dxf.py`     PDF page -> clean entities (circles, arcs, hidden/centre/dimension lines, texts) -> DXF
 - `drawing.py`     entities -> drawing JSON (frame, title block, views, dimensions, scale) + page PNG
 - `preview.py`     built model -> PNG (isometric, top, front)
+- `views_dxf.py`   built model -> DXF views with hidden lines (front, top, left, iso + combined sheet)
 - `guide.py`       server instructions, workflow, drawing-reading guide, worked example
-- `server.py`      MCP wiring only (7 tools)
+- `server.py`      MCP wiring (7 tools), DXF paths in every response, JSONL request log
 - `run_json.py`    test JSON files without MCP: `python run_json.py examples/pad_fuss.json` (exit 1 on failure)
-- `test_all.py`    builds every example, checks that 23 bad JSONs are rejected, the confirm list, arc/circle detection,
-                   and with `DRAWINGS_DIR=<folder with fuss.pdf grundplatte.pdf lagerschaft.pdf>` the PDF reading
+- `test_all.py`    builds every example (+ view DXFs), checks that 23 bad JSONs are rejected, the confirm list,
+                   arc/circle detection, the MCP tools end to end (DXF paths, request log), and with
+                   `DRAWINGS_DIR=<folder with fuss.pdf grundplatte.pdf lagerschaft.pdf>` the PDF reading.
+                   The Docker build runs it, so keep it.
+- `examples/`      one JSON per feature; `test_plate.json` = all cut types, `lagerschaft_ai_full.json` = a full
+                   AI-written answer (title block, modeling plan, verification) that must still build
 
 ## Features
 | Kind | Types |
@@ -74,9 +95,9 @@ If the CadQuery kernel cannot do a fillet/chamfer, the model is kept without it 
 2. `zoom_drawing(view | region)`          close-up image
 3. `get_part_schema()`                    workflow, reading guide, conventions, JSON schema, worked example
 4. `validate_part_json(part)`             errors to fix + review list + confirm list, BEFORE building
-5. `build_from_json(part)`                builds, checks, confirm list, preview PNG
+5. `build_from_json(part)`                builds, checks, confirm list, preview PNG, model view DXFs
 6. `confirm_items(ids)`                   user agreed to confirm items
-7. `export_step(filename)`                STEP (draft/final) + re-import check + review JSON + preview PNG
+7. `export_step(filename)`                STEP (draft/final) + re-import check + review JSON + preview PNG + DXFs
 
 ## Install (Python 3.10+)
     python -m pip install -r requirements.txt   # mcp>=2 cadquery pydantic shapely pymupdf ezdxf
@@ -94,5 +115,5 @@ mm; origin = lower-left corner of the top view on the bottom face; cuts from the
 (depth from the plate top unless `from_z`); missing values -> `assumptions` with a reason.
 
 ## Env
-`OUTPUT_DIR` (STEP, review JSON, DXF, previews), `INPUT_DIR` (relative PDF paths), `DRAWING2CAD_NOTIFY=0` turns off the
+`OUTPUT_DIR` (STEP, review JSON, DXF, previews, `mcp_log.jsonl`), `DRAWING2CAD_LOG` (log path or `0`), `INPUT_DIR` (relative PDF paths), `DRAWING2CAD_NOTIFY=0` turns off the
 macOS notification (`osascript`, skipped automatically on other systems, e.g. in Docker).

@@ -31,7 +31,8 @@ then restart Claude Desktop:
 
 - `-i` keeps stdin open: Claude talks to the server over stdio, exactly like the local Python setup.
 - `--network none`: the server needs no network, so the container gets none.
-- `/output`: STEP, `<name>_review.json`, preview PNG and the DXF of each loaded drawing land here.
+- `/output`: STEP, `<name>_review.json`, preview PNG, the DXF of each loaded drawing, the model view DXFs
+  (`<name>_views.dxf`, `_front/_top/_left/_iso.dxf`) and the request log `mcp_log.jsonl` land here.
 - `/input` (read-only): put your drawing PDFs here. Ask Claude to load e.g. `Splint.pdf`; a full host path
   also works, the server then looks the file name up in `/input`.
 - Linux hosts: the server runs as uid 1000. If `/output` belongs to another user, add `"--user", "<your uid>"`.
@@ -74,7 +75,7 @@ fails if any check fails:
 1. Every `MCP/examples/*.json` part (plates, Grundplatte, Lagerschaft, Fuss, turned shafts, threads,
    side holes, fillets/chamfers...) is validated, built with CadQuery and passes the model check:
    one valid solid, bounding box and z range match the spec, every hole probed for diameter and depth,
-   round features found; then exported to STEP and re-imported.
+   round features found; then exported to STEP and re-imported, and the model view DXFs are written.
 2. More than 20 deliberately broken part JSONs (holes outside the part, too deep, wrong thread core
    diameter, floating pads, impossible fillets, typos in field names...) must be rejected with a
    clear message.
@@ -82,6 +83,8 @@ fails if any check fails:
 4. PDF reading: Bezier arcs and flattened circles are recognised as arcs/circles. (The sample
    drawing PDFs are not in the repo, so the full `load_drawing` run is skipped in the build;
    set `DRAWINGS_DIR` to run it locally.)
+5. The MCP tools end to end: tool schemas, build + export return the DXF paths, every call is in
+   the request log.
 
 What it does not check: the AI step itself (reading a drawing and writing the JSON) needs an LLM
 client such as Claude Desktop and is shown in the demo.
@@ -89,6 +92,6 @@ client such as Claude Desktop and is shown in the demo.
 ## Repository
 - `Dockerfile`     image for the MCP server (stdio), runs the tests at build time
 - `MCP/`           the server: `server.py` (MCP tools), `schema.py`, `normalize.py`, `builder.py`,
-                   `validation.py`, `drawing.py` + `pdf2dxf.py` (PDF -> DXF + drawing JSON), `preview.py`,
+                   `validation.py`, `drawing.py` + `pdf2dxf.py` (PDF -> DXF + drawing JSON), `preview.py`, `views_dxf.py`,
                    `run_json.py`, `test_all.py`, `examples/`
 - `output/`        default place for generated STEP / review files (git-ignored)

@@ -180,7 +180,7 @@ class Fixer:
         for k in DEPTH_KEYS:
             if k in f:
                 f[k] = self.depth(f[k], f"{where}.{k}")
-        for k, fi in fields.items():
+        for k in fields:
             if k in f and isinstance(f[k], str) and k not in ("id", "type", "review", "derivation", "description",
                                                              "edges", "side", "shape", "wall", "direction",
                                                              "face", "thread", "bore_depth", "depth"):

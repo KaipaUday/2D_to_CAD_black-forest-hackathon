@@ -1,6 +1,7 @@
 """Quick regression run: python test_all.py
 1. every examples/*.json must build and pass the model check (run_json.run)
-2. every bad JSON below must be REJECTED with the expected message."""
+2. every bad JSON below must be REJECTED with the expected message
+3. the MCP tools return DXF paths and log every call (server_checks)."""
 import glob
 import json
 import sys
@@ -130,6 +131,37 @@ def drawing_checks() -> bool:
     return ok
 
 
+def server_checks() -> bool:
+    """MCP tools end to end: every response carries the DXF paths, build/export
+    write the model view DXFs, every call lands in the JSONL request log."""
+    import asyncio
+    import os
+    import tempfile
+    os.environ.setdefault("OUTPUT_DIR", tempfile.mkdtemp())
+    os.environ["DRAWING2CAD_NOTIFY"] = "0"
+    import server
+    tools = {t.name: t for t in asyncio.run(server.mcp.list_tools())}
+    ok = all("properties" in t.input_schema for t in tools.values()) and \
+        "part" in tools["build_from_json"].input_schema["properties"]
+    js = open("examples/fuss.json", encoding="utf-8").read()
+    built = json.loads(server.build_from_json(part=js)[0])
+    exp = json.loads(server.export_step(filename="fuss_test.step")[0])
+    model_dxf = (exp.get("dxf") or {}).get("model") or {}
+    ok &= built.get("ok") and set(built["dxf"]["model"]) == {"views", "front", "top", "left", "iso"}
+    ok &= exp.get("ok") and all(os.path.getsize(p) > 0 for p in model_dxf.values()) and \
+        all(os.path.basename(p).startswith(exp["status"] == "draft" and "fuss_test_draft" or "fuss_test")
+            for p in model_dxf.values())
+    ok &= "dxf" in server.validate_part_json(part=js) and "dxf" in server.get_part_schema()
+    log = [json.loads(line) for line in open(server.LOG_PATH, encoding="utf-8")]
+    calls = [e["tool"] for e in log[-4:]]
+    ok &= calls == ["build_from_json", "export_step", "validate_part_json", "get_part_schema"] and \
+        all({"ts", "request", "summary", "duration_ms", "files_out"} <= set(e) for e in log[-4:]) and \
+        any(p.endswith("fuss_test_draft.step") or p.endswith("fuss_test.step") for p in log[-3]["files_out"])
+    print(f"{'OK  ' if ok else 'FAIL'} MCP tools: {len(tools)} tools, model DXFs {sorted(model_dxf)}, "
+          f"log {len(log)} lines at {server.LOG_PATH}")
+    return bool(ok)
+
+
 def main() -> int:
     ok = True
     for f in sorted(glob.glob("examples/*.json")):
@@ -160,6 +192,7 @@ def main() -> int:
     print(f"{'OK  ' if hit else 'FAIL'} confirm list: {got}")
     ok &= ai_slip_checks()
     ok &= drawing_checks()
+    ok &= server_checks()
     print("ALL OK" if ok else "SOME FAILED")
     return 0 if ok else 1
 
