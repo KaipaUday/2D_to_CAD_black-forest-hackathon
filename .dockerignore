@@ -1,0 +1,9 @@
+.git
+.venv
+**/__pycache__
+**/*.pyc
+**/*.step
+.DS_Store
+output
+MCP/examples/out
+PROJECT_CONTEXT.md

@@ -53,6 +53,11 @@ def _resolve(path: str) -> str:
         for base in [INPUT_DIR, os.getcwd(), OUTPUT_DIR]:
             if base and os.path.exists(os.path.join(base, p)):
                 return os.path.join(base, p)
+    elif not os.path.exists(p) and INPUT_DIR:
+        # in Docker the AI may still pass the host path: look up the file name in INPUT_DIR
+        alt = os.path.join(INPUT_DIR, os.path.basename(p))
+        if os.path.exists(alt):
+            return alt
     return p
 
 
