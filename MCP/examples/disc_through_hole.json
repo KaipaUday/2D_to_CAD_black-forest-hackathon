@@ -1,0 +1,9 @@
+{
+  "name": "Regression - through hole through a bottom disc",
+  "description": "mcp_review bug 1: discs must be added before cuts so the through hole goes through the disc. Expected volume 100*60*10 + pi*20^2*5 - pi*5^2*15 = 65105.3",
+  "body": {"type": "box", "length": 100, "width": 60, "thickness": 10},
+  "features": [
+    {"type": "bottom_disc", "id": "D1", "center": [50, 30], "diameter": 40, "height": 5},
+    {"type": "hole", "id": "H1", "positions": [[50, 30]], "diameter": 10, "depth": "through"}
+  ]
+}

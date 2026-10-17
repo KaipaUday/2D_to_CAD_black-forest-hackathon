@@ -20,7 +20,7 @@ OUTPUT_DIR = os.environ.get("OUTPUT_DIR", os.path.expanduser("~/drawing2cad_outp
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 mcp = MCPServer("drawing2cad")
-state: dict = {"part": None, "model": None}
+state: dict = {"part": None, "model": None, "notes": [], "check": None}
 
 
 @mcp.tool()
@@ -46,7 +46,8 @@ def validate_part_json(part: dict) -> dict:
 @mcp.tool()
 def build_from_json(part: dict) -> dict:
     """Validate the part JSON, then build the 3D model and check it against the
-    spec (valid solid, overall size, every hole found at the right place).
+    spec (valid solid, overall size, every hole probed for diameter and depth,
+    fillets/chamfers applied or listed as not modelled).
     Returns all check results. Call export_step afterwards if ok is true."""
     parsed, errors = V.parse(part)
     if parsed is None:
@@ -54,23 +55,29 @@ def build_from_json(part: dict) -> dict:
     errors = V.plausibility(parsed)
     if errors:
         return {"ok": False, "stage": "plausibility", "errors": errors}
+    notes: list = []
     try:
-        model = builder.build(parsed)
+        model = builder.build(parsed, notes)
     except Exception as e:
+        state.update(part=None, model=None, notes=[], check=None)
         return {"ok": False, "stage": "build", "errors": [{"problem": str(e)}]}
-    state["part"], state["model"] = parsed, model
-    result = V.check_model(model, parsed)
+    result = V.check_model(model, parsed, notes)
+    state.update(part=parsed, model=model, notes=notes, check=result)
     result["stage"] = "model_check"
-    result["review_list"] = V.review_list(parsed)
+    result["review_list"] = V.review_list(parsed, notes)
     return result
 
 
 @mcp.tool()
 def export_step(filename: str) -> dict:
     """Export the last built model as STEP (filename without path, e.g.
-    'grundplatte.step'), re-import it, and save the review list next to it."""
+    'grundplatte.step'), re-import it, and save <name>_review.json next to it
+    (review list + model check). Refuses if the last model check failed."""
     if state["model"] is None:
         return {"ok": False, "error": "Nothing built yet. Call build_from_json first."}
+    if not state["check"]["ok"]:
+        failed = [k for k, v in state["check"]["checks"].items() if not v]
+        return {"ok": False, "error": f"Last build failed the model check {failed}; fix the JSON and rebuild."}
     name = os.path.basename(filename)
     if not name.lower().endswith((".step", ".stp")):
         name += ".step"
@@ -79,7 +86,11 @@ def export_step(filename: str) -> dict:
     step = V.check_step(path)
     review_path = os.path.splitext(path)[0] + "_review.json"
     with open(review_path, "w", encoding="utf-8") as f:
-        json.dump(V.review_list(state["part"]), f, indent=2, ensure_ascii=False)
+        json.dump({"part": state["part"].name, "step_file": name,
+                   "validated": state["check"]["ok"] and step["reimport_ok"],
+                   "model_check": state["check"], "step_check": step,
+                   "review_list": V.review_list(state["part"], state["notes"])},
+                  f, indent=2, ensure_ascii=False)
     return {"ok": step["reimport_ok"], "path": path, "review_file": review_path, **step}
 
 
