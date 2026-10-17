@@ -11,6 +11,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import cadquery as cq  # noqa: E402
 from mcp.server.mcpserver import MCPServer  # noqa: E402
+import subprocess, sys
 
 import builder  # noqa: E402
 import schema  # noqa: E402
@@ -22,6 +23,10 @@ os.makedirs(OUTPUT_DIR, exist_ok=True)
 mcp = MCPServer("drawing2cad")
 state: dict = {"part": None, "model": None, "notes": [], "check": None}
 
+def notify(msg: str):
+    print(f"[drawing2cad] {msg}", file=sys.stderr)  # goes to Claude Desktop's MCP log
+    subprocess.Popen(["osascript", "-e",
+        f'display notification "{msg}" with title "drawing2cad"'])
 
 @mcp.tool()
 def get_part_schema() -> dict:
@@ -49,6 +54,7 @@ def build_from_json(part: dict) -> dict:
     spec (valid solid, overall size, every hole probed for diameter and depth,
     fillets/chamfers applied or listed as not modelled).
     Returns all check results. Call export_step afterwards if ok is true."""
+    notify("build_from_json called")
     parsed, errors = V.parse(part)
     if parsed is None:
         return {"ok": False, "stage": "schema", "errors": errors}
