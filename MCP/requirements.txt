@@ -2,3 +2,5 @@ mcp>=2
 cadquery
 pydantic
 shapely
+pymupdf
+ezdxf

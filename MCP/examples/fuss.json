@@ -1,0 +1,108 @@
+{
+  "name": "Fuss",
+  "title_block": {
+    "part_name": "Fuss",
+    "company": "BCT",
+    "scale_stated": "1:1",
+    "sheet": "A3"
+  },
+  "body": {
+    "type": "box",
+    "length": 115,
+    "width": 115,
+    "thickness": 19,
+    "corner_radius": 22,
+    "source": {
+      "view": "top V3 / front V1",
+      "dims": [
+        "115",
+        "115",
+        "R22",
+        "19"
+      ]
+    }
+  },
+  "features": [
+    {
+      "type": "pad",
+      "id": "P1",
+      "shape": "circle",
+      "center": [
+        57.5,
+        57.5
+      ],
+      "diameter": 57,
+      "z0": 19,
+      "height": 57.2,
+      "bore_diameter": 33,
+      "bore_depth": "through",
+      "source": {
+        "view": "front V1",
+        "dims": [
+          "Ø57",
+          "Ø33",
+          "76.2"
+        ]
+      },
+      "derivation": "height = 76.2 - 19"
+    },
+    {
+      "type": "hole",
+      "id": "H1",
+      "positions": [
+        [
+          22,
+          22
+        ],
+        [
+          93,
+          22
+        ],
+        [
+          22,
+          93
+        ],
+        [
+          93,
+          93
+        ]
+      ],
+      "diameter": 19,
+      "depth": "through",
+      "source": {
+        "view": "top V3",
+        "text": "4x Ø19",
+        "dims": [
+          "71"
+        ]
+      }
+    },
+    {
+      "type": "fillet",
+      "id": "R1",
+      "edges": "pad_root",
+      "targets": [
+        "P1"
+      ],
+      "radius": 9.5,
+      "source": {
+        "view": "front V1",
+        "text": "R9.5"
+      }
+    }
+  ],
+  "assumptions": [
+    {
+      "item": "H1 positions",
+      "value": "22 from each edge",
+      "confidence": "high",
+      "reason": "Only the spacing 71 is dimensioned; holes are concentric with the R22 corners (115 - 71) / 2 = 22"
+    },
+    {
+      "item": "P1 bore depth",
+      "value": "through",
+      "confidence": "medium",
+      "reason": "Hidden lines of the bore reach the underside in the front view; no THRU note"
+    }
+  ]
+}

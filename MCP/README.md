@@ -1,7 +1,34 @@
 # Drawing2CAD MCP server
 
-JSON part description -> validate -> build (CadQuery) -> check -> STEP.
-No AI inside the server: the AI writes the JSON, the server is deterministic.
+PDF drawing -> `load_drawing` (DXF + drawing JSON + page image) -> AI writes the part JSON
+-> validate -> build (CadQuery) -> check -> preview PNG -> confirm unsure values -> STEP.
+No AI inside the server: the AI reads the drawing and writes the JSON, the server is deterministic.
+
+## Pipeline
+1. `load_drawing(pdf_path, page=1, scale=None)` runs `pdf2dxf.py`, saves `<name>.dxf` in OUTPUT_DIR and returns
+   - a drawing JSON: sheet size, frame, title block area, scale (stated text + measured from dimension text vs. geometry),
+     views (clustered visible outlines, kind hint orthographic / section / isometric, alignment between views),
+     per view circles (Ø), arcs (R), lines (hidden flag) in view-local coordinates (x `scale`),
+     dimension lines (sheet length, linked circle Ø / arc R, linked text or text region), texts / text regions;
+   - the page as PNG with the views boxed V1, V2, ...
+   PDFs with outlined lettering (all CAx/BCT samples except the 1_xxx sheets) have no extractable text:
+   the JSON says so (`text_mode: outlined`) and the AI reads values from the image (`zoom_drawing`).
+2. `zoom_drawing(view | region)` returns a close-up image for small text and symbols.
+3. `get_part_schema()` gives the workflow, a drawing-reading guide (views, sections, symbols, general notes),
+   the conventions, the JSON schema (every field described in drawing terms) and a worked example (Fuss).
+4. `validate_part_json` / `build_from_json` build first, confirm after: the result has the model check, the
+   review list, a short **confirm** list (assumptions with confidence medium/low, flagged or low-confidence
+   features), `status` draft/final and a PNG preview (isometric, top, front).
+5. `confirm_items(ids)` records the user's yes; a different value means: edit the JSON and rebuild.
+6. `export_step(name)` writes `<name>.step` (or `<name>_draft.step` while confirm items are open),
+   `<name>_review.json` and `<name>_preview.png`.
+
+### pdf2dxf.py (also a CLI: `python pdf2dxf.py in.pdf out.dxf` or folders)
+- closed ring of cubic Beziers with a square bbox -> CIRCLE; every Bezier that fits a circle -> ARC;
+  arcs covering 360° -> CIRCLE; flattened curves (chains of short segments on a circle) -> ARC/CIRCLE
+- dash patterns written as separate segments -> one line on layer HIDDEN or CENTER
+- arrowheads (filled or stroked slim triangles) dropped; lines ending at an arrow tip -> DIMENSION
+- extension and hatch lines on their own layers; real text per line (`get_text` lines), outlined text as TEXT_REGIONS
 
 ## Files
 - `schema.py`      Pydantic models = the JSON format (+ conventions in the docstring), extra=forbid everywhere
@@ -9,9 +36,14 @@ No AI inside the server: the AI writes the JSON, the server is deterministic.
 - `threads.py`     ISO metric thread table (nominal, coarse pitch, tap drill)
 - `builder.py`     Part -> CadQuery solid (plain functions, testable without MCP)
 - `validation.py`  schema, plausibility, warnings, defaulted fields, review list, model probes, STEP re-import
-- `server.py`      MCP wiring only (4 tools)
+- `pdf2dxf.py`     PDF page -> clean entities (circles, arcs, hidden/centre/dimension lines, texts) -> DXF
+- `drawing.py`     entities -> drawing JSON (frame, title block, views, dimensions, scale) + page PNG
+- `preview.py`     built model -> PNG (isometric, top, front)
+- `guide.py`       server instructions, workflow, drawing-reading guide, worked example
+- `server.py`      MCP wiring only (7 tools)
 - `run_json.py`    test JSON files without MCP: `python run_json.py examples/pad_fuss.json` (exit 1 on failure)
-- `test_all.py`    builds every example and checks that 23 bad JSONs are rejected
+- `test_all.py`    builds every example, checks that 23 bad JSONs are rejected, the confirm list, arc/circle detection,
+                   and with `DRAWINGS_DIR=<folder with fuss.pdf grundplatte.pdf lagerschaft.pdf>` the PDF reading
 
 ## Features
 | Kind | Types |
@@ -36,21 +68,29 @@ If the CadQuery kernel cannot do a fillet/chamfer, the model is kept without it 
 - `export_step` refuses a model that failed the check and writes `<name>_review.json` (review list + model check + STEP re-import).
 
 ## Tools
-1. `get_part_schema()`          JSON schema + conventions (AI calls this first)
-2. `validate_part_json(part)`   errors to fix + review list, BEFORE building
-3. `build_from_json(part)`      builds and checks
-4. `export_step(filename)`      STEP + re-import check + `<name>_review.json`
+1. `load_drawing(pdf_path, page, scale)`  DXF + drawing JSON + page image (AI calls this first)
+2. `zoom_drawing(view | region)`          close-up image
+3. `get_part_schema()`                    workflow, reading guide, conventions, JSON schema, worked example
+4. `validate_part_json(part)`             errors to fix + review list + confirm list, BEFORE building
+5. `build_from_json(part)`                builds, checks, confirm list, preview PNG
+6. `confirm_items(ids)`                   user agreed to confirm items
+7. `export_step(filename)`                STEP (draft/final) + re-import check + review JSON + preview PNG
 
 ## Install (Python 3.10+)
-    python -m pip install "mcp>=2" cadquery pydantic shapely
+    python -m pip install -r requirements.txt   # mcp>=2 cadquery pydantic shapely pymupdf ezdxf
 
 ## Claude Desktop config
     "drawing2cad": {
       "command": "/Users/xx/GitHub/2D_to_CAD_black-forest-hackathon/.venv/bin/python",
       "args": ["/Users/xx/GitHub/2D_to_CAD_black-forest-hackathon/MCP/server.py"],
-      "env": {"OUTPUT_DIR": "/Users/xx/GitHub/2D_to_CAD_black-forest-hackathon/output"}
+      "env": {"OUTPUT_DIR": "/Users/xx/GitHub/2D_to_CAD_black-forest-hackathon/output",
+              "INPUT_DIR": "/Users/xx/Drawings"}
     }
 
 ## Conventions
 mm; origin = lower-left corner of the top view on the bottom face; cuts from the top face down
 (depth from the plate top unless `from_z`); missing values -> `assumptions` with a reason.
+
+## Env
+`OUTPUT_DIR` (STEP, review JSON, DXF, previews), `INPUT_DIR` (relative PDF paths), `DRAWING2CAD_NOTIFY=0` turns off the
+macOS notification (`osascript`, skipped automatically on other systems, e.g. in Docker).

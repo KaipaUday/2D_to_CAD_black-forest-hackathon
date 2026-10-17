@@ -1,4 +1,5 @@
 """Part description (intermediate JSON) for Drawing2CAD.
+Every value comes from the drawing; anything else goes into `assumptions`.
 
 Conventions
 - Units: mm. Angles: degrees.
@@ -67,9 +68,9 @@ Depth = Union[Annotated[float, Field(gt=0)], Literal["through"]]
 
 class Source(BaseModel):
     model_config = ConfigDict(extra="allow")
-    view: Optional[str] = Field(None, description="e.g. 'top', 'section A-A'")
-    text: Optional[str] = Field(None, description="Text as written on the drawing")
-    dims: Optional[list[str]] = Field(None, description="Dimension values used")
+    view: Optional[str] = Field(None, description="Where on the drawing: 'top V3', 'section A-A', 'detail X'")
+    text: Optional[str] = Field(None, description="Callout as written on the drawing, e.g. '4x Ø6.6 ⌴Ø11 ↧6.8'")
+    dims: Optional[list[str]] = Field(None, description="Dimension values read from the drawing for this feature")
 
 
 class Base(BaseModel):
@@ -78,10 +79,11 @@ class Base(BaseModel):
     # fields with a None default that still mean "a value was assumed"
     FLAG_IF_UNSET: ClassVar[tuple[str, ...]] = ()
     source: Optional[Source] = None
-    confidence: float = Field(1.0, ge=0, le=1)
-    review: Optional[str] = Field(None, description="Why a human should check this")
-    derivation: Optional[str] = Field(None, description="How a value was calculated")
-    description: Optional[str] = None
+    confidence: float = Field(1.0, ge=0, le=1, description="How sure the reading of this feature is (below 0.8 = must be confirmed)")
+    review: Optional[str] = Field(None, description="Why a human should check this (puts it on the confirm list)")
+    confirmed: bool = Field(False, description="Set true after the user confirmed this feature")
+    derivation: Optional[str] = Field(None, description="How a value was calculated from drawing dimensions, e.g. 'height = 76.2 - 19'")
+    description: Optional[str] = Field(None, description="Free text (what the feature is on the part)")
 
 
 # ---------- outline vertices ----------
@@ -142,10 +144,10 @@ ThreadIn = Annotated[ThreadSpec, BeforeValidator(lambda v: {"designation": v} if
 class BoxBody(Base):
     type: Literal["box"]
     id: str = "B0"
-    length: float = Field(gt=0, description="X size")
-    width: float = Field(gt=0, description="Y size")
-    thickness: float = Field(gt=0, description="Z size")
-    corner_radius: float = Field(0, ge=0, description="Radius on the vertical outer edges")
+    length: float = Field(gt=0, description="Overall X size in the top view")
+    width: float = Field(gt=0, description="Overall Y size in the top view")
+    thickness: float = Field(gt=0, description="Plate thickness (Z), from the front view or section")
+    corner_radius: float = Field(0, ge=0, description="Corner radius of the outline in the top view (R on the corners)")
 
     def top_z(self) -> float:
         return self.thickness
@@ -164,8 +166,8 @@ class PolygonBody(Base):
 
 class HullCircle(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    center: Point
-    diameter: float = Field(gt=0)
+    center: Point = Field(description="Circle centre in the top view (part mm, origin lower-left)")
+    diameter: float = Field(gt=0, description="Ø of the boss/eye that forms the outline")
 
 
 class CirclesHullBody(Base):
@@ -238,24 +240,24 @@ class _HoleCore(Base):
 
 class Hole(_HoleCore):
     type: Literal["hole"]
-    positions: list[Point] = Field(min_length=1)
+    positions: list[Point] = Field(min_length=1, description="Hole centres in the top view; '4x' = 4 positions")
     from_z: Optional[float] = Field(None, description="Entry height; default = plate top (e.g. give the cavity floor)")
 
 
 class CounterboreHole(_HoleCore):
     type: Literal["counterbore_hole"]
-    positions: list[Point] = Field(min_length=1)
-    cbore_diameter: float = Field(gt=0)
-    cbore_depth: float = Field(gt=0)
-    from_z: Optional[float] = None
+    positions: list[Point] = Field(min_length=1, description="Hole centres in the top view")
+    cbore_diameter: float = Field(gt=0, description="Counterbore Ø (⌴ symbol, 'Senkung' for socket head screws)")
+    cbore_depth: float = Field(gt=0, description="Counterbore depth from the top (↧)")
+    from_z: Optional[float] = Field(None, description="Entry height; default = plate top")
 
 
 class CountersinkHole(_HoleCore):
     type: Literal["countersink_hole"]
-    positions: list[Point] = Field(min_length=1)
-    csk_diameter: float = Field(gt=0)
-    csk_angle: float = Field(90, gt=0, lt=180)
-    from_z: Optional[float] = None
+    positions: list[Point] = Field(min_length=1, description="Hole centres in the top view")
+    csk_diameter: float = Field(gt=0, description="Countersink outer Ø at the surface (⌵ symbol)")
+    csk_angle: float = Field(90, gt=0, lt=180, description="Included cone angle, usually 90°")
+    from_z: Optional[float] = Field(None, description="Entry height; default = plate top")
 
 
 class _HeadOptions(BaseModel):
@@ -300,17 +302,17 @@ class Slot(Base):
     id: str
     start: Point = Field(description="Centre of one round end")
     end: Point = Field(description="Centre of the other round end")
-    width: float = Field(gt=0)
-    depth: Depth = "through"
+    width: float = Field(gt=0, description="Slot width (= Ø of the round ends)")
+    depth: Depth = Field("through", description="Depth from the top or 'through'")
 
 
 class Pocket(Base):
     type: Literal["pocket"]
     id: str
-    center: Point
-    size: Point = Field(description="(x size, y size)")
-    depth: float = Field(gt=0)
-    corner_radius: float = Field(0, ge=0)
+    center: Point = Field(description="Pocket centre in the top view")
+    size: Point = Field(description="(x size, y size) of the rectangular pocket / recess")
+    depth: float = Field(gt=0, description="Depth from the top (from the section)")
+    corner_radius: float = Field(0, ge=0, description="Inner corner radius in the top view")
 
 
 class PolygonPocket(Base):
@@ -325,8 +327,8 @@ class PolygonPocket(Base):
 class Cavity(Base):
     type: Literal["cavity"]
     id: str
-    wall_thickness: float = Field(gt=0)
-    depth: float = Field(gt=0)
+    wall_thickness: float = Field(gt=0, description="Wall thickness of the shelled tray ('Wandstärke')")
+    depth: float = Field(gt=0, description="Cavity depth from the top (section: top to floor)")
     floor_thickness: Optional[float] = Field(None, description="Check value: thickness - depth")
     corner_radius: Optional[float] = Field(None, description="Inner corner radius (from offset; recorded)")
     floor_fillet: float = Field(0, ge=0, description="(not modelled)")
@@ -338,8 +340,8 @@ class Boss(Base):
     FLAG_IF_UNSET = ("top_z",)
     type: Literal["boss"]
     id: str
-    center: Point
-    diameter: float = Field(gt=0)
+    center: Point = Field(description="Centre in the top view")
+    diameter: float = Field(gt=0, description="Outer Ø of the round island standing in the cavity")
     top_z: Optional[float] = Field(None, description="Top height; default = plate top")
 
 
@@ -348,9 +350,9 @@ class Rib(Base):
     type: Literal["rib"]
     id: str
     center: Point
-    direction: Literal["x", "y"]
-    length: float = Field(gt=0)
-    width: float = Field(gt=0)
+    direction: Literal["x", "y"] = Field(description="Rib runs along X or Y in the top view")
+    length: float = Field(gt=0, description="Rib length")
+    width: float = Field(gt=0, description="Rib thickness")
     top_z: Optional[float] = Field(None, description="Top height; default = plate top")
     end_slope_deg: float = Field(0, ge=0, lt=90, description="(not modelled)")
 
@@ -361,11 +363,11 @@ class Tab(Base):
     id: str
     center_x: Optional[float] = Field(None, description="For wall 'top' or 'bottom'")
     center_y: Optional[float] = Field(None, description="For wall 'left' or 'right'")
-    wall: Literal["top", "bottom", "left", "right"]
-    width: float = Field(gt=0)
-    length_from_inner_wall: float = Field(gt=0)
-    tip_corner_radius: float = Field(0, ge=0)
-    top_z: Optional[float] = None
+    wall: Literal["top", "bottom", "left", "right"] = Field(description="Cavity wall (top view) the tab grows from")
+    width: float = Field(gt=0, description="Tab width along the wall")
+    length_from_inner_wall: float = Field(gt=0, description="How far the tab reaches into the cavity")
+    tip_corner_radius: float = Field(0, ge=0, description="Radius on the tab tip corners")
+    top_z: Optional[float] = Field(None, description="Top height; default = plate top")
 
     @model_validator(mode="after")
     def _position(self):
@@ -387,7 +389,7 @@ class Pad(Base):
     corner_radius: float = Field(0, ge=0, description="rect / polygon: vertical edge radius")
     points: Optional[list[VertexIn]] = Field(None, min_length=3, description="polygon outline")
     z0: Optional[float] = Field(None, description="Base height; default = plate top")
-    height: float = Field(gt=0)
+    height: float = Field(gt=0, description="Height above z0 (standing boss height = overall height - plate thickness)")
     taper_deg: float = Field(0, ge=0, lt=45, description="Draft of the side walls (real geometry)")
     bore_diameter: Optional[float] = Field(None, gt=0, description="Centre bore (circle / rect)")
     bore_depth: Optional[Depth] = Field(None, description="From the pad top; 'through' = whole part")
@@ -421,8 +423,8 @@ class Pad(Base):
 class BottomDisc(Base):
     type: Literal["bottom_disc"]
     id: str
-    center: Point
-    diameter: float = Field(gt=0)
+    center: Point = Field(description="Centre in the top view")
+    diameter: float = Field(gt=0, description="Ø of the disc / collar under the plate (section)")
     height: float = Field(gt=0, description="Below the plate underside")
 
 
@@ -451,7 +453,7 @@ class _EdgeOp(Base):
 
 class Fillet(_EdgeOp):
     type: Literal["fillet"]
-    radius: float = Field(gt=0)
+    radius: float = Field(gt=0, description="R from the drawing (edge rounding, root fillet)")
 
 
 class Chamfer(_EdgeOp):
@@ -469,21 +471,31 @@ ROUND_HOLES = (Hole, CounterboreHole, CountersinkHole)
 ALL_HOLES = ROUND_HOLES + (SideHole, AxisHole)
 
 
+Level = Literal["high", "medium", "low"]
+
+
 class Assumption(BaseModel):
+    """A value that is NOT written on the drawing (measured from the image,
+    taken from a general note, symmetry, a standard, or a guess)."""
     model_config = ConfigDict(extra="allow")
-    item: str
-    value: Any = None
-    reason: str
+    item: str = Field(description="What was assumed, using feature ids, e.g. 'H1 depth' or 'P1 height'")
+    value: Any = Field(None, description="The value used in the model")
+    reason: str = Field(description="Why: 'scaled from top view', 'general note R3', 'symmetric to H1', 'not shown'")
+    confidence: Level = Field("medium", description=(
+        "high = follows directly from the drawing (symmetry, general note, standard); "
+        "medium = plausible reading, should be confirmed; low = guess. "
+        "medium/low go on the confirm list returned by build_from_json"))
+    confirmed: bool = Field(False, description="Set true after the user confirmed this value")
 
 
 class Part(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    name: Optional[str] = None
+    name: Optional[str] = Field(None, description="Part name from the title block")
     description: Optional[str] = None
     units: Literal["mm"] = "mm"
-    body: Body
-    features: list[Feature] = []
-    assumptions: list[Assumption] = []
+    body: Body = Field(description="Base solid: box | polygon | circles_hull | revolve")
+    features: list[Feature] = Field([], description="Everything else read from the drawing, in any order")
+    assumptions: list[Assumption] = Field([], description="Every value NOT written on the drawing, with reason and confidence")
     # free-form documentation sections (not used for geometry)
     title_block: Optional[dict[str, Any]] = None
     coordinate_system: Optional[dict[str, Any]] = None

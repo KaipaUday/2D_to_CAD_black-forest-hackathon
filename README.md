@@ -3,7 +3,7 @@ Need python 3.12 or greater for MCP
 `
 python3 -m venv .venv #create new ev
 source .venv/bin/activate  #activate 
-pip install cadquery "mcp>=2"
+pip install -r requirements.txt   # mcp>=2 cadquery pydantic shapely pymupdf ezdxf
 `
 
 update the path according claude installation.

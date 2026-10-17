@@ -372,6 +372,27 @@ def defaulted(part: Part) -> list[dict]:
     return out
 
 
+def confirm_list(part: Part, threshold: float = 0.8, limit: int = 12) -> list[dict]:
+    """Short list of the uncertain readings the user should confirm (build
+    first, confirm after). Assumptions with confidence medium/low, features
+    with a review note or confidence below threshold; confirmed ones are left out."""
+    items = []
+    for a in part.assumptions:
+        if a.confidence != "high" and not a.confirmed:
+            items.append({"item": a.item, "value": a.value, "reason": a.reason, "confidence": a.confidence})
+    for obj in [part.body, *part.features]:
+        if obj.confirmed:
+            continue
+        if obj.review or obj.confidence < threshold:
+            items.append({"item": obj.id, "value": obj.type, "reason": obj.review or f"confidence {obj.confidence}",
+                          "confidence": "low" if obj.confidence < 0.5 else "medium"})
+    items.sort(key=lambda i: i["confidence"] != "low")
+    for n, i in enumerate(items, 1):
+        i["id"] = f"C{n}"
+    return items[:limit] + ([{"id": "more", "reason": f"{len(items) - limit} more, see review_list"}]
+                            if len(items) > limit else [])
+
+
 def review_list(part: Part, build_notes: list | None = None, threshold: float = 0.8) -> list[dict]:
     items = [{"item": a.item, "value": a.value, "reason": a.reason, "kind": "assumption"}
              for a in part.assumptions]

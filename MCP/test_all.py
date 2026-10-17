@@ -57,6 +57,43 @@ BAD = [
 ]
 
 
+def drawing_checks() -> bool:
+    """PDF reading: Bezier arcs, flattened circles, and the sample PDFs in
+    $DRAWINGS_DIR (fuss.pdf, grundplatte.pdf, lagerschaft.pdf) when present."""
+    import math
+    import os
+    import pdf2dxf as P
+    ok = True
+    k = 0.5523 * 10  # quarter circle r=10 as one cubic
+    arc = P.bezier_as_arc([(10, 0), (10, k), (k, 10), (0, 10)])
+    hit = arc is not None and abs(arc["r"] - 10) < 0.01 and min(arc["a0"], 360 - arc["a0"]) < 0.1 and abs(arc["a1"] - 90) < 0.1
+    pts = [(5 + 3 * math.cos(t / 24 * 2 * math.pi), 7 + 3 * math.sin(t / 24 * 2 * math.pi)) for t in range(25)]
+    rest, arcs = P._fit_polyline_arcs([(pts[i], pts[i + 1], 0.5) for i in range(24)])
+    _, circles = P._merge_arcs(arcs, lambda w: True)
+    hit &= not rest and len(circles) == 1 and abs(circles[0]["r"] - 3) < 0.05
+    ok &= hit
+    print(f"{'OK  ' if hit else 'FAIL'} bezier arc + flattened circle detection")
+    base = os.environ.get("DRAWINGS_DIR", "")
+    expect = {"fuss.pdf": ([115.0, 115.0], 19.0), "grundplatte.pdf": ([179.0, 85.0], 29.0),
+              "lagerschaft.pdf": ([180.0, 90.0], 30.0)}
+    if base and os.path.isdir(base):
+        import tempfile
+        import drawing
+        for f, (size, dia) in expect.items():
+            path = os.path.join(base, f)
+            if not os.path.exists(path):
+                continue
+            d, png = drawing.load(path, tempfile.mkdtemp())
+            sizes = [v["size"] for v in d["views"]]
+            dias = {c["diameter"] for v in d["views"] for c in v["circles"]}
+            hit = size in sizes and dia in dias and png[:4] == b"\x89PNG" and os.path.exists(d["dxf"])
+            ok &= hit
+            print(f"{'OK  ' if hit else 'FAIL'} load_drawing {f}: views {sizes}, dims {len(d['dimensions'])}")
+    else:
+        print("skip load_drawing PDFs (set DRAWINGS_DIR to a folder with fuss/grundplatte/lagerschaft.pdf)")
+    return ok
+
+
 def main() -> int:
     ok = True
     for f in sorted(glob.glob("examples/*.json")):
@@ -75,6 +112,17 @@ def main() -> int:
     hit = {"K.depth", "K.csk_angle"} <= flagged
     ok &= hit
     print(f"{'OK  ' if hit else 'FAIL'} defaulted fields on review list: {sorted(flagged)}")
+    # confirm list: medium/low assumptions and flagged features, confirmed ones left out
+    p, _ = V.parse(part([{"type": "hole", "id": "H", "positions": [[50, 30]], "diameter": 5, "review": "depth?"},
+                         {"type": "hole", "id": "J", "positions": [[20, 30]], "diameter": 5, "review": "x", "confirmed": True}])
+                   | {"assumptions": [{"item": "a", "reason": "r", "confidence": "high"},
+                                      {"item": "b", "reason": "r", "confidence": "low"},
+                                      {"item": "c", "reason": "r"}]})
+    got = [c["item"] for c in V.confirm_list(p)]
+    hit = got == ["b", "c", "H"]
+    ok &= hit
+    print(f"{'OK  ' if hit else 'FAIL'} confirm list: {got}")
+    ok &= drawing_checks()
     print("ALL OK" if ok else "SOME FAILED")
     return 0 if ok else 1
 
