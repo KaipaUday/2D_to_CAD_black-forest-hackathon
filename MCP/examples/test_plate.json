@@ -1,0 +1,25 @@
+{
+  "name": "Test plate - all feature types",
+  "body": {"type": "polygon",
+           "points": [[0,0],[140,0],[140,118],[30,118],[0,88]],
+           "thickness": 15, "corner_radius": 5,
+           "source": {"view": "top", "text": "140, 118"}},
+  "features": [
+    {"type": "hole", "id": "F1", "positions": [[100, 38]], "diameter": 25,
+     "source": {"view": "top", "text": "Ø25"}},
+    {"type": "hole", "id": "F2", "positions": [[52, 99], [130, 99]], "diameter": 6.6,
+     "source": {"view": "top", "text": "Ø6,6"}},
+    {"type": "counterbore_hole", "id": "F3", "positions": [[22, 70]],
+     "diameter": 6.6, "cbore_diameter": 11, "cbore_depth": 6.8,
+     "confidence": 0.5, "review": "y-position not dimensioned, measured from scale"},
+    {"type": "countersink_hole", "id": "F4", "positions": [[75, 13], [125, 13]],
+     "diameter": 5.5, "csk_diameter": 10.5},
+    {"type": "hole", "id": "F5", "positions": [[40, 30]], "diameter": 4.2, "depth": 10},
+    {"type": "slot", "id": "F6", "start": [58, 70], "end": [92, 70], "width": 6},
+    {"type": "pocket", "id": "F7", "center": [90, 104], "size": [90, 16], "depth": 6,
+     "corner_radius": 4}
+  ],
+  "assumptions": [
+    {"item": "F5 thread M5", "value": 4.2, "reason": "Core hole Ø4.2 for M5 assumed; thread not modelled"}
+  ]
+}

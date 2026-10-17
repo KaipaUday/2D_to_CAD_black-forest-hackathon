@@ -1,87 +1,86 @@
-"""Minimal Drawing2CAD MCP server: 3 tools + validation.
+"""Drawing2CAD MCP server: JSON spec -> validate -> build -> check -> STEP.
 
-Run in Claude Desktop (config) or with agent.py.
-Requires: pip install cadquery "mcp>=2"
+Requires: pip install "mcp>=2" cadquery pydantic shapely
+Claude Desktop config: command = <venv>/bin/python, args = [<path>/server.py]
 """
+import json
 import os
+import sys
 
-import cadquery as cq
-from mcp.server.mcpserver import MCPServer
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+import cadquery as cq  # noqa: E402
+from mcp.server.mcpserver import MCPServer  # noqa: E402
+
+import builder  # noqa: E402
+import schema  # noqa: E402
+import validation as V  # noqa: E402
 
 OUTPUT_DIR = os.environ.get("OUTPUT_DIR", os.path.expanduser("~/drawing2cad_output"))
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 mcp = MCPServer("drawing2cad")
-state = {"part": None}
-
-
-def validate() -> dict:
-    """Check the current part and return machine-readable results."""
-    part = state["part"]
-    if part is None:
-        return {"ok": False, "error": "No part yet. Call create_box first."}
-    solid = part.val()
-    bb = solid.BoundingBox()
-    holes = []
-    for f in part.faces("%CYLINDER").vals():
-        circle = next(e for e in f.Edges() if e.geomType() == "CIRCLE")
-        c = f.Center()  # lies on the hole axis
-        holes.append({"diameter": round(circle.radius() * 2, 3),
-                      "x": round(c.x, 3), "y": round(c.y, 3)})
-    holes.sort(key=lambda h: (h["x"], h["y"]))
-    return {
-        "ok": solid.isValid(),
-        "valid_solid": solid.isValid(),
-        "size_xyz": [round(bb.xlen, 3), round(bb.ylen, 3), round(bb.zlen, 3)],
-        "holes_found": holes,
-    }
+state: dict = {"part": None, "model": None}
 
 
 @mcp.tool()
-def create_box(length: float, width: float, thickness: float) -> dict:
-    """Create the base body: a rectangular block in mm.
-
-    length = X (left-right in top view), width = Y (bottom-top in top view),
-    thickness = Z. The origin is the lower-left corner of the top view, on
-    the bottom face. Replaces any existing part.
-    """
-    state["part"] = cq.Workplane("XY").box(length, width, thickness,
-                                           centered=False)
-    return validate()
+def get_part_schema() -> dict:
+    """Return the JSON schema and conventions for a part description.
+    Call this FIRST, then write the part JSON for the drawing."""
+    return {"conventions": schema.__doc__,
+            "json_schema": schema.Part.model_json_schema()}
 
 
 @mcp.tool()
-def add_hole(x: float, y: float, diameter: float) -> dict:
-    """Drill a THROUGH hole from the top face.
+def validate_part_json(part: dict) -> dict:
+    """Check a part description BEFORE building: schema, plausibility
+    (features inside the part, depths, counterbore sizes...) and the review list.
+    Fix every error and call again until ok is true."""
+    parsed, errors = V.parse(part)
+    if parsed is None:
+        return {"ok": False, "errors": errors}
+    errors = V.plausibility(parsed)
+    return {"ok": not errors, "errors": errors, "review_list": V.review_list(parsed)}
 
-    x, y in mm from the lower-left corner as seen in the top view.
-    Call once per hole (for '2x Ø10', call twice).
-    """
-    if state["part"] is None:
-        return {"ok": False, "error": "No part yet. Call create_box first."}
-    top_z = state["part"].val().BoundingBox().zmax
-    state["part"] = (state["part"].faces(">Z")
-                     .workplane(origin=(0, 0, top_z))
-                     .pushPoints([(x, y)]).hole(diameter))
-    return validate()
+
+@mcp.tool()
+def build_from_json(part: dict) -> dict:
+    """Validate the part JSON, then build the 3D model and check it against the
+    spec (valid solid, overall size, every hole found at the right place).
+    Returns all check results. Call export_step afterwards if ok is true."""
+    parsed, errors = V.parse(part)
+    if parsed is None:
+        return {"ok": False, "stage": "schema", "errors": errors}
+    errors = V.plausibility(parsed)
+    if errors:
+        return {"ok": False, "stage": "plausibility", "errors": errors}
+    try:
+        model = builder.build(parsed)
+    except Exception as e:
+        return {"ok": False, "stage": "build", "errors": [{"problem": str(e)}]}
+    state["part"], state["model"] = parsed, model
+    result = V.check_model(model, parsed)
+    result["stage"] = "model_check"
+    result["review_list"] = V.review_list(parsed)
+    return result
 
 
 @mcp.tool()
 def export_step(filename: str) -> dict:
-    """Export the current part as a STEP file and check it re-imports.
-
-    filename without path, e.g. 'plate.step'.
-    """
-    if state["part"] is None:
-        return {"ok": False, "error": "No part yet. Call create_box first."}
-    path = os.path.join(OUTPUT_DIR, os.path.basename(filename))
-    cq.exporters.export(state["part"], path)
-    try:
-        reimported = cq.importers.importStep(path)
-        reimport_ok = reimported.val().isValid()
-    except Exception as e:  # report, don't crash
-        return {"ok": False, "path": path, "reimport_error": str(e)}
-    return {"ok": reimport_ok, "path": path, "reimport_ok": reimport_ok}
+    """Export the last built model as STEP (filename without path, e.g.
+    'grundplatte.step'), re-import it, and save the review list next to it."""
+    if state["model"] is None:
+        return {"ok": False, "error": "Nothing built yet. Call build_from_json first."}
+    name = os.path.basename(filename)
+    if not name.lower().endswith((".step", ".stp")):
+        name += ".step"
+    path = os.path.join(OUTPUT_DIR, name)
+    cq.exporters.export(state["model"], path)
+    step = V.check_step(path)
+    review_path = os.path.splitext(path)[0] + "_review.json"
+    with open(review_path, "w", encoding="utf-8") as f:
+        json.dump(V.review_list(state["part"]), f, indent=2, ensure_ascii=False)
+    return {"ok": step["reimport_ok"], "path": path, "review_file": review_path, **step}
 
 
 if __name__ == "__main__":
