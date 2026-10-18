@@ -3,7 +3,7 @@
 2D technical drawing (PDF) -> 3D model (STEP), driven by an AI through a local MCP server.
 The AI reads the drawing and writes a part JSON; the server is deterministic: it validates the JSON,
 builds the solid with CadQuery, checks the model against the spec and exports STEP plus a review JSON
-that lists every assumption. No dimension is invented silently. Details: [MCP/README.md](MCP/README.md).
+that lists every assumption. No dimension is invented silently.
 
     drawing PDF ──► load_drawing (PDF -> DXF + drawing JSON + page image)
                 ──► AI (Claude Desktop, or the web UI via OpenRouter) writes the part JSON
@@ -11,80 +11,78 @@ that lists every assumption. No dimension is invented silently. Details: [MCP/RE
                 ──► confirm_items (user answers the short confirm list) ──► export_step
                 ──► <part>.step + <part>_review.json + model view DXFs
 
-Two ways to use it, both on the same MCP server image:
-- **Claude Desktop** (or any MCP client) talks to the server directly, see below.
-- **Web review UI** ([UI-Server/README.md](UI-Server/README.md)): upload a PDF, see PDF, DXF, STEP and the
-  review list side by side, edit the JSON and rebuild. Needs an OpenRouter key.
-
 | Folder | What | Read |
 |---|---|---|
+| `Dockerfile` | the MCP server image; the build runs all tests | [What the build checks](#what-the-build-checks) |
 | `MCP/` | the MCP server (tools, schema, builder, checks, PDF reader) | [MCP/README.md](MCP/README.md) |
 | `UI-Server/` | local web review app (stdlib Python + three.js STEP viewer) | [UI-Server/README.md](UI-Server/README.md) |
-| `skills/drawing2cad-convert/` | agent skill: how an AI should use the tools | [SKILL.md](skills/drawing2cad-convert/SKILL.md) |
-| `Dockerfile` | the image the evaluation builds; runs all tests at build time | "What the build checks" |
+| `skills/drawing2cad-convert/` | agent skill: how an AI uses the tools | [SKILL.md](skills/drawing2cad-convert/SKILL.md) |
 
-## Run with Docker (recommended)
+## 1. Build (this is also the evaluation build)
 
+Needs only Docker: no API key, no secrets, no GPU, no licensed software.
+
+    git clone https://github.com/KaipaUday/2D_to_CAD_black-forest-hackathon.git
+    cd 2D_to_CAD_black-forest-hackathon
     docker build -t drawing2cad .
 
-This is the build an automated evaluation runs: the root `Dockerfile` is the only build file at the repo
-root (no `docker-compose.yml` or `package.json`), it copies only `MCP/` and needs no API key. The build also runs the regression suite (see "What the build checks"), so a finished build means the
-CAD kernel works in the image. Needs no secrets, no licensed software and no GPU; the first build
-downloads about 1 GB of Python wheels (CadQuery / OpenCascade).
+The root `Dockerfile` is the only build file at the repo root (no `docker-compose.yml`, no `package.json`).
+It copies only `MCP/`, installs CadQuery / OpenCascade (about 1 GB of wheels on the first build) and runs
+the regression suite, so a finished build means the server and the CAD kernel work in the image.
 
-### Use it from Claude Desktop
-
-Add to `claude_desktop_config.json` (Settings > Developer > Edit Config), adjust the two host folders,
-then restart Claude Desktop:
-
-    "mcpServers": {
-      "drawing2cad": {
-        "command": "docker",
-        "args": ["run", "-i", "--rm", "--network", "none",
-                 "--memory", "2g", "--cpus", "2",
-                 "-v", "/Users/xxx/GitHub/2D_to_CAD_black-forest-hackathon/output:/output",
-                 "-v", "/Users/xxx/Drawings:/input:ro",
-                 "drawing2cad"]
-      }
-    }
-
-- `-i` keeps stdin open: Claude talks to the server over stdio, exactly like the local Python setup.
-- `--network none`: the server needs no network, so the container gets none.
-- `/output`: STEP, `<name>_review.json`, preview PNG, the DXF of each loaded drawing, the model view DXFs
-  (`<name>_views.dxf`, `_front/_top/_left/_iso.dxf`) and the request log `mcp_log.jsonl` land here.
-- `/input` (read-only): put your drawing PDFs here. Ask Claude to load e.g. `Splint.pdf`; a full host path
-  also works, the server then looks the file name up in `/input`.
-- Linux hosts: the server runs as uid 1000. If `/output` belongs to another user, add `"--user", "<your uid>"`.
-
-Then drop a drawing into the chat or name a PDF in `/input`, e.g. "Convert Splint.pdf to a STEP model".
-Claude calls `load_drawing` -> `get_part_schema` -> `build_from_json` -> `confirm_items` -> `export_step`.
-
-Quick check without Claude (prints the server info and the 7 tools as JSON):
+Check that the server answers (prints the server info and its 7 tools as JSON):
 
     printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"cli","version":"1"}}}' \
       '{"jsonrpc":"2.0","method":"notifications/initialized"}' \
       '{"jsonrpc":"2.0","id":2,"method":"tools/list"}' | docker run -i --rm --network none drawing2cad
 
-## Run without Docker
+## 2. Test with Claude Desktop
 
-Python 3.12 or newer:
+1. Make two folders, one for results and one for drawings:
 
-    python3 -m venv .venv
-    source .venv/bin/activate
-    pip install -r requirements.txt   # mcp>=2 cadquery pydantic shapely pymupdf ezdxf
-    cd MCP && python test_all.py      # same checks as the Docker build
+       mkdir -p output drawings          # in the repo folder; copy a drawing PDF into drawings/
 
-Claude Desktop config:
+2. In Claude Desktop open Settings > Developer > Edit Config and add this to `claude_desktop_config.json`
+   (replace `/ABSOLUTE/PATH/TO/REPO` with the output of `pwd`), then restart Claude Desktop:
 
-    "mcpServers": {
-      "drawing2cad": {
-        "command": "/Users/xxx/GitHub/2D_to_CAD_black-forest-hackathon/.venv/bin/python",
-        "args": ["/Users/xxx/GitHub/2D_to_CAD_black-forest-hackathon/MCP/server.py"],
-        "env": {"OUTPUT_DIR": "/Users/xxx/GitHub/2D_to_CAD_black-forest-hackathon/output"}
-      }
-    }
+       {
+         "mcpServers": {
+           "drawing2cad": {
+             "command": "docker",
+             "args": ["run", "-i", "--rm", "--network", "none", "--memory", "2g", "--cpus", "2",
+                      "-v", "/ABSOLUTE/PATH/TO/REPO/output:/output",
+                      "-v", "/ABSOLUTE/PATH/TO/REPO/drawings:/input:ro",
+                      "drawing2cad"]
+           }
+         }
+       }
 
-Test a single part JSON without any AI: `cd MCP && python run_json.py examples/grundplatte.json`.
+3. In a new chat, check that `drawing2cad` shows up under the tools icon, then try:
+   - without a drawing: *"Use drawing2cad: call get_part_schema, then build its worked example (Fuss) and
+     export it as fuss.step."*
+   - with a drawing: *"Convert MyPart.pdf to a STEP model."* (the file name in `drawings/`)
+
+   Claude calls `load_drawing` -> `get_part_schema` -> `validate_part_json` -> `build_from_json`, asks you the
+   short confirm list, then `confirm_items` -> `export_step`.
+
+4. Results land in `output/`: `<part>.step` (or `<part>_draft.step` while items are unconfirmed),
+   `<part>_review.json`, `<part>_preview.png`, the drawing and model view DXFs and `mcp_log.jsonl`.
+
+Notes: `-i` is the stdio connection; `--network none` because the server needs no network. On Linux the
+server runs as uid 1000; if `output/` belongs to another user, add `"--user", "<your uid>"` to `args`.
+
+## 3. Web review UI (needs an OpenRouter API key)
+
+Upload a PDF in the browser and see the PDF, the DXF, the 3D STEP model and the review list side by side;
+edit the JSON and rebuild. The UI server is plain Python (no `pip install`) and starts the `drawing2cad`
+image from step 1 by itself for every run.
+
+    cd UI-Server
+    export OPENROUTER_API_KEY=sk-or-...                   # key from https://openrouter.ai/keys
+    # or once: echo "OPENROUTER_API_KEY=sk-or-..." > .env (git-ignored, never commit it)
+    python3 server.py                                     # open http://127.0.0.1:8765
+
+Model and cost limit per run are in `UI-Server/config.json`; details in [UI-Server/README.md](UI-Server/README.md).
 
 ## What the build checks
 
@@ -107,6 +105,19 @@ fails if any check fails:
 
 What it does not check: the AI step itself (reading a drawing and writing the JSON) needs an LLM
 client such as Claude Desktop and is shown in the demo.
+
+## Run without Docker
+
+Python 3.10 or newer:
+
+    python3 -m venv .venv && source .venv/bin/activate
+    pip install -r requirements.txt   # mcp>=2 cadquery pydantic shapely pymupdf ezdxf
+    cd MCP && python test_all.py      # same checks as the Docker build
+    python run_json.py examples/grundplatte.json   # build one part JSON without any AI
+
+For Claude Desktop use `"command": "/ABSOLUTE/PATH/TO/REPO/.venv/bin/python"`,
+`"args": ["/ABSOLUTE/PATH/TO/REPO/MCP/server.py"]` and `"env": {"OUTPUT_DIR": "/ABSOLUTE/PATH/TO/REPO/output",
+"INPUT_DIR": "/ABSOLUTE/PATH/TO/REPO/drawings"}`. For the web UI see `mcp.command` in [UI-Server/README.md](UI-Server/README.md).
 
 ## For AI agents reading this repo
 - Start with the skill [skills/drawing2cad-convert/SKILL.md](skills/drawing2cad-convert/SKILL.md) (tool

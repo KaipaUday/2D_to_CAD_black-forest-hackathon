@@ -11,3 +11,4 @@ output-*/*
 **/.env
 UI-Server/work/
 UI-Server/backup_before_openrouter/
+drawings/

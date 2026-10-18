@@ -8,6 +8,8 @@ description: Convert a 2D technical drawing PDF into a validated 3D STEP model w
 You never write geometry or CAD code. You read the drawing and write a **part JSON**; the server
 validates it, builds the solid with CadQuery, checks the model and exports STEP plus a review JSON.
 Use only the MCP tools: your own sandbox cannot see the server's files.
+Setup (Docker image + Claude Desktop config, or the web UI): repo `README.md`, sections 1-3.
+If the `drawing2cad` tools are missing, the server is not connected; say so instead of improvising.
 
 ## Flow
 1. `load_drawing(pdf_path)`: page image with views boxed V1, V2, ... + drawing JSON (views, circles Ø,

@@ -110,11 +110,14 @@ Docker (from the repo root): `docker build -t drawing2cad .` builds the image an
 a failing check fails the build.
 
 ## Claude Desktop config
+Docker (recommended): see [Test with Claude Desktop](../README.md#2-test-with-claude-desktop) in the main README.
+Local Python:
+
     "drawing2cad": {
-      "command": "/Users/xx/GitHub/2D_to_CAD_black-forest-hackathon/.venv/bin/python",
-      "args": ["/Users/xx/GitHub/2D_to_CAD_black-forest-hackathon/MCP/server.py"],
-      "env": {"OUTPUT_DIR": "/Users/xx/GitHub/2D_to_CAD_black-forest-hackathon/output",
-              "INPUT_DIR": "/Users/xx/Drawings"}
+      "command": "/ABSOLUTE/PATH/TO/REPO/.venv/bin/python",
+      "args": ["/ABSOLUTE/PATH/TO/REPO/MCP/server.py"],
+      "env": {"OUTPUT_DIR": "/ABSOLUTE/PATH/TO/REPO/output",
+              "INPUT_DIR": "/ABSOLUTE/PATH/TO/REPO/drawings"}
     }
 
 ## Conventions
