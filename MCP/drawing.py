@@ -377,18 +377,22 @@ def load(pdf_path: str, out_dir: str, page: int = 1, scale: float | None = None,
         L = d["rec"]["sheet_length"]
         if kind == "diameter" and "for_circle_diameter" in d["rec"]:
             L = d["rec"]["for_circle_diameter"] / s
-        if kind in ("length", "diameter") and L > 2:
+        if kind in ("length", "diameter") and L > 2 and val > 0:   # ordinate "0" baselines give ratio 0
             ratios.append(val / L)
     measured = None
+    ratios = [r for r in ratios if r > 0 and math.isfinite(r)]
     if ratios:
         # the ratio most other samples agree with (tolerances and notes give outliers)
-        med = max(ratios, key=lambda r: sum(1 for q in ratios if abs(q / r - 1) < 0.03))
-        close = [q for q in ratios if abs(q / med - 1) < 0.03]
-        agree = len(close)
-        med = statistics.median(close)
-        txt, f = _nearest_scale(med)
-        measured = {"part_mm_per_sheet_mm": _r(med, 4), "nearest_standard": txt, "samples": len(ratios),
-                    "agreeing": agree}
+        try:
+            med = max(ratios, key=lambda r: sum(1 for q in ratios if abs(q / r - 1) < 0.03))
+            close = [q for q in ratios if abs(q / med - 1) < 0.03]
+            agree = len(close)
+            med = statistics.median(close)
+            txt, f = _nearest_scale(med)
+            measured = {"part_mm_per_sheet_mm": _r(med, 4), "nearest_standard": txt, "samples": len(ratios),
+                        "agreeing": agree}
+        except (ArithmeticError, ValueError) as e:  # the scale is only a hint: never fail the page
+            measured = {"error": f"scale not measured: {e}"}
 
     text_mode = "text" if len(ent["texts"]) >= 5 else ("outlined" if len(ent["glyph_boxes"]) > 20 else "none")
     result = {
