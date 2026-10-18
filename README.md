@@ -5,11 +5,30 @@ The AI reads the drawing and writes a part JSON; the server is deterministic: it
 builds the solid with CadQuery, checks the model against the spec and exports STEP plus a review JSON
 that lists every assumption. No dimension is invented silently. Details: [MCP/README.md](MCP/README.md).
 
+    drawing PDF ──► load_drawing (PDF -> DXF + drawing JSON + page image)
+                ──► AI (Claude Desktop, or the web UI via OpenRouter) writes the part JSON
+                ──► validate_part_json ──► build_from_json (CadQuery) ──► model check + preview
+                ──► confirm_items (user answers the short confirm list) ──► export_step
+                ──► <part>.step + <part>_review.json + model view DXFs
+
+Two ways to use it, both on the same MCP server image:
+- **Claude Desktop** (or any MCP client) talks to the server directly, see below.
+- **Web review UI** ([UI-Server/README.md](UI-Server/README.md)): upload a PDF, see PDF, DXF, STEP and the
+  review list side by side, edit the JSON and rebuild. Needs an OpenRouter key.
+
+| Folder | What | Read |
+|---|---|---|
+| `MCP/` | the MCP server (tools, schema, builder, checks, PDF reader) | [MCP/README.md](MCP/README.md) |
+| `UI-Server/` | local web review app (stdlib Python + three.js STEP viewer) | [UI-Server/README.md](UI-Server/README.md) |
+| `skills/drawing2cad-convert/` | agent skill: how an AI should use the tools | [SKILL.md](skills/drawing2cad-convert/SKILL.md) |
+| `Dockerfile` | the image the evaluation builds; runs all tests at build time | "What the build checks" |
+
 ## Run with Docker (recommended)
 
     docker build -t drawing2cad .
 
-The build also runs the regression suite (see "What the build checks"), so a finished build means the
+This is the build an automated evaluation runs: the root `Dockerfile` is the only build file at the repo
+root (no `docker-compose.yml` or `package.json`), it copies only `MCP/` and needs no API key. The build also runs the regression suite (see "What the build checks"), so a finished build means the
 CAD kernel works in the image. Needs no secrets, no licensed software and no GPU; the first build
 downloads about 1 GB of Python wheels (CadQuery / OpenCascade).
 
@@ -89,9 +108,23 @@ fails if any check fails:
 What it does not check: the AI step itself (reading a drawing and writing the JSON) needs an LLM
 client such as Claude Desktop and is shown in the demo.
 
+## For AI agents reading this repo
+- Start with the skill [skills/drawing2cad-convert/SKILL.md](skills/drawing2cad-convert/SKILL.md) (tool
+  order, conventions, rules). The server sends the same text as its MCP instructions (`MCP/guide.py`), and
+  `get_part_schema` returns the full JSON schema with a worked example.
+- The part JSON format is `MCP/schema.py` (Pydantic, unknown keys rejected); examples in `MCP/examples/`.
+- To check a change: `cd MCP && python run_json.py examples/<file>.json` for one part, `python test_all.py`
+  for everything (the Docker build runs the same).
+
 ## Repository
 - `Dockerfile`     image for the MCP server (stdio), runs the tests at build time
 - `MCP/`           the server: `server.py` (MCP tools), `schema.py`, `normalize.py`, `builder.py`,
                    `validation.py`, `drawing.py` + `pdf2dxf.py` (PDF -> DXF + drawing JSON), `preview.py`, `views_dxf.py`,
-                   `run_json.py`, `test_all.py`, `examples/`
+                   `guide.py` (instructions for the AI), `run_json.py`, `test_all.py`, `examples/`
+- `UI-Server/`     web review app: `server.py` (OpenRouter agent loop over the MCP server), `index.html`,
+                   `config.json` (model, cost limit, how the MCP server is started), `vendor/` (three.js, occt-import-js)
+- `skills/`        agent skill for the conversion workflow
 - `output/`        default place for generated STEP / review files (git-ignored)
+
+API keys: only the web UI needs one (`OPENROUTER_API_KEY`, from the shell or `UI-Server/.env`). `.env` files
+are git-ignored and excluded from the Docker build context.

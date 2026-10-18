@@ -6,3 +6,8 @@ __pycache__/
 MCP/examples/out/
 output/*
 output-*/*
+.DS_Store
+.env
+**/.env
+UI-Server/work/
+UI-Server/backup_before_openrouter/

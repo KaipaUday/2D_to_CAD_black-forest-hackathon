@@ -3,6 +3,9 @@
 PDF drawing -> `load_drawing` (DXF + drawing JSON + page image) -> AI writes the part JSON
 -> validate -> build (CadQuery) -> check -> preview PNG -> confirm unsure values -> STEP.
 No AI inside the server: the AI reads the drawing and writes the JSON, the server is deterministic.
+Agent-facing summary: [../skills/drawing2cad-convert/SKILL.md](../skills/drawing2cad-convert/SKILL.md);
+the server sends the same rules as its MCP instructions (`guide.py`). Clients: Claude Desktop or the web
+UI in [../UI-Server](../UI-Server/README.md).
 
 ## Pipeline
 1. `load_drawing(pdf_path, page=1, scale=None)` runs `pdf2dxf.py`, saves `<name>.dxf` in OUTPUT_DIR and returns
@@ -101,6 +104,10 @@ If the CadQuery kernel cannot do a fillet/chamfer, the model is kept without it 
 
 ## Install (Python 3.10+)
     python -m pip install -r requirements.txt   # mcp>=2 cadquery pydantic shapely pymupdf ezdxf
+    python test_all.py                          # the same suite the root Docker build runs
+
+Docker (from the repo root): `docker build -t drawing2cad .` builds the image and runs `test_all.py`;
+a failing check fails the build.
 
 ## Claude Desktop config
     "drawing2cad": {
