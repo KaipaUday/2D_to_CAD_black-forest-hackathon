@@ -1,0 +1,18 @@
+{
+  "openrouter": {
+  "model": "anthropic/claude-opus-5.5",
+  "fallback_models": ["google/gemini-2.5-flash"],
+    "max_cost_usd": 3.0,
+    "max_turns": 30,
+    "max_tokens": 8000
+  },
+  "mcp": {
+    "transport": "stdio",
+    "command": ["docker", "run", "-i", "--rm", "--network", "none", "--memory", "2g", "--cpus", "2",
+                "-v", "{output_dir}:/output", "-v", "{input_dir}:/input:ro", "drawing2cad"],
+    "server_output_dir": "/output",
+    "server_input_dir": "/input",
+    "input_dir": "work/input",
+    "output_dir": "work/output"
+  }
+}

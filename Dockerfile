@@ -13,7 +13,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY MCP/ ./MCP/
-
+RUN chmod -R a+rX /app
 # Build-time check: byte-compile everything and run the regression suite
 # (all examples/*.json build + pass the model check, bad JSONs are rejected).
 RUN python -m compileall -q MCP \

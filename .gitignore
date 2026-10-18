@@ -5,3 +5,4 @@ PROJECT_CONTEXT.md
 __pycache__/
 MCP/examples/out/
 output/*
+output-*/*
