@@ -5,7 +5,7 @@ The AI reads the drawing and writes a part JSON; the server is deterministic: it
 builds the solid with CadQuery, checks the model against the spec and exports STEP plus a review JSON
 that lists every assumption. No dimension is invented silently.
 
-    drawing PDF ──► load_drawing (PDF -> DXF + drawing JSON + page image)
+    drawing PDF ──► load_drawing (PDF -> DXF )
                 ──► AI (Claude Desktop, or the web UI via OpenRouter) writes the part JSON
                 ──► validate_part_json ──► build_from_json (CadQuery) ──► model check + preview
                 ──► confirm_items (user answers the short confirm list) ──► export_step
