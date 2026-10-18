@@ -3,6 +3,12 @@ one worked example (Fuss, BCT sample sheet). Returned by get_part_schema."""
 
 SERVER_INSTRUCTIONS = """drawing2cad turns a 2D technical drawing into a validated 3D STEP model.
 You never write geometry or CAD code: you read the drawing and write a part JSON; the server builds it.
+Use ONLY these tools. Do not run Python, code execution or a sandbox of your own to read the PDF or DXF:
+your sandbox cannot see the server's files and has none of its libraries. load_drawing already returns the
+DXF geometry (views, circles, arcs, lines, dimensions) as JSON. For a PDF you were sent as an attachment,
+call load_drawing with its file name (it is looked up in the input folder). Multi-page PDF: load every page.
+Always reach build_from_json: a feature the schema cannot express (inclined rib, odd cut) goes into the
+JSON as the nearest feature with `review` set, or into `assumptions`; never stop without building.
 Flow: load_drawing(pdf) -> look at the image + drawing JSON (zoom_drawing for small text) -> get_part_schema
 -> write the part JSON -> validate_part_json -> build_from_json (look at the preview) -> ask the user the
 short confirm list -> confirm_items or fix + rebuild -> export_step.
